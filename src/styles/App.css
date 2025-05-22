@@ -1,0 +1,83 @@
+:root {
+  /* Light theme variables - updated */
+  --bg-color-light: #ffffff;
+  --text-color-light: #1a1a1a;
+  --primary-color: #373db7;
+  --secondary-color: #484ac7;
+  --hover-bg-rgb: 5, 150, 105;
+  --shadow-color-light: rgba(0, 0, 0, 0.1);
+  --border-color-light: #e5e7eb;
+  --card-bg-light: #ffffff;
+  --tooltip-bg-light: rgba(255, 255, 255, 0.95);
+  --tooltip-border-light: #e5e7eb;
+  --header-bg-light: #ffffff;
+
+  /* Dark theme variables - updated with better black variants */
+  --bg-color-dark: #171616;
+  --text-color-dark: #ffffff;
+  --shadow-color-dark: rgba(0, 0, 0, 0.5);
+  --border-color-dark: #1f1f1f;
+  --card-bg-dark: #1e1c1c;
+  --tooltip-bg-dark: rgba(37, 35, 35, 0.95);
+  --tooltip-border-dark: #1f1f1f;
+  --header-bg-dark: #0f0f0f;
+  
+  /* Chart colors for dark theme - removed blue */
+  --chart-positive-dark: #3b3bbd;
+  --chart-negative-dark: #f87171;
+  --chart-neutral-dark: #d1d5db;
+  --chart-grid-dark: #1f1f1f;
+  --chart-text-dark: #ffffff;
+}
+
+[data-theme="light"] {
+  --bg-color: var(--bg-color-light);
+  --text-color: var(--text-color-light);
+  --shadow-color: var(--shadow-color-light);
+  --border-color: var(--border-color-light);
+  --card-bg: var(--card-bg-light);
+  --tooltip-bg: var(--tooltip-bg-light);
+  --tooltip-border: var(--tooltip-border-light);
+  --header-bg: var(--header-bg-light);
+}
+
+[data-theme="dark"] {
+  --bg-color: var(--bg-color-dark);
+  --text-color: var(--text-color-dark);
+  --shadow-color: var(--shadow-color-dark);
+  --border-color: var(--border-color-dark);
+  --card-bg: var(--card-bg-dark);
+  --tooltip-bg: var(--tooltip-bg-dark);
+  --tooltip-border: var(--tooltip-border-dark);
+  --header-bg: var(--header-bg-dark);
+}
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  position: relative;
+  width: 100%;
+}
+
+.content-wrapper {
+  flex: 1;
+  padding-top: 60px;
+  width: 100%;
+  padding-bottom: 20px;
+}
+
+.main-content {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}

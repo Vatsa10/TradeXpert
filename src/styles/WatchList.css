@@ -1,0 +1,345 @@
+:root {
+  /* Light theme */
+  --light-bg: #ffffff;
+  --light-surface: #f8f9fa;
+  --light-border: #e9ecef;
+  --light-text: #333333;
+  --light-primary: #2563eb;
+  --light-success: #16a34a;
+  --light-danger: #dc2626;
+  --light-card-shadow: rgba(0, 0, 0, 0.1);
+  --light-hover-bg: #f1f5f9;
+
+  /* Dark theme */
+  --dark-bg: #0f1218;
+  --dark-surface: #17181a;
+  --dark-border: #0d0f11;
+  --dark-text: #e2e8f0;
+  --dark-primary: #60a5fa;
+  --dark-success: #4ade80;
+  --dark-danger: #f87171;
+  --dark-card-shadow: rgba(0, 0, 0, 0.3);
+  --dark-hover-bg: #000000;
+}
+
+.watchlist {
+  padding: 2rem;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.scroll-container {
+  width: 100%;
+  overflow-x: auto;
+  padding: 1rem 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.scroll-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.scroll-container::-webkit-scrollbar-track {
+  background: var(--light-surface);
+  border-radius: 4px;
+}
+
+.scroll-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.watchlist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.stock-grid {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.5rem;
+  min-width: min-content;
+}
+
+.stock-card {
+  min-width: 300px;
+  background: var(--light-surface);
+  border: 1px solid var(--light-border);
+  color: var(--light-text);
+  border-radius: 10px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px var(--light-card-shadow);
+  transition: transform 0.2s;
+}
+
+.stock-card:hover {
+  transform: translateY(-5px);
+}
+
+.stock-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+
+.alert-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 999;
+}
+
+.section-container {
+  background: var(--light-bg);
+  border-radius: 15px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alerts-grid {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem;
+  min-width: min-content;
+}
+
+.alert-card {
+  min-width: 250px;
+  background: var(--light-surface);
+  border: 1px solid var(--light-border);
+  color: var(--light-text);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.alert-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.alert-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.875rem;
+  background: #e3f2fd;
+  color: var(--light-primary);
+}
+
+.add-button {
+  background: var(--light-primary);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 0.2s;
+}
+
+.add-button:hover {
+  background: var(--light-primary);
+  filter: brightness(90%);
+}
+
+.positive-change {
+  color: var(--light-success);
+}
+
+.negative-change {
+  color: var(--light-danger);
+}
+
+/* Enhanced button styles */
+.btn-danger {
+  background: transparent;
+  color: var(--light-danger);
+  border: 1px solid var(--light-danger);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-danger:hover {
+  background: var(--light-danger);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+}
+
+.delete-alert-btn {
+  background: transparent;
+  color: var(--light-danger);
+  border: 1px solid var(--light-danger);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  width: 100%;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.delete-alert-btn:hover {
+  background: var(--light-danger);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+}
+
+/* Light theme styles */
+.light.watchlist {
+  background: var(--light-bg);
+  color: var(--light-text);
+}
+
+.light .section-container {
+  background: var(--light-surface);
+  border-color: var(--light-border);
+}
+
+.light .stock-card,
+.light .alert-card {
+  background: var(--light-surface);
+  border-color: var(--light-border);
+  color: var(--light-text);
+}
+
+.light .section-title {
+  color: var(--light-text);
+}
+
+.light .stock-info p,
+.light .alert-card p {
+  color: #64748b;
+}
+
+.light .alert-status {
+  background: #e3f2fd;
+  color: var(--light-primary);
+}
+
+/* Dark theme styles */
+.dark.watchlist {
+  background: var(--dark-bg);
+  color: var(--dark-text);
+}
+
+.dark .section-container {
+  background: var(--dark-surface);
+  border-color: var(--dark-border);
+}
+
+.dark .stock-card,
+.dark .alert-card {
+  background: var(--dark-surface);
+  border-color: var(--dark-border);
+  color: var(--dark-text);
+  box-shadow: 0 2px 4px var(--dark-card-shadow);
+}
+
+.dark .section-title {
+  color: var(--dark-text);
+}
+
+.dark .stock-info h3,
+.dark .stock-info h4,
+.dark .alert-info h4 {
+  color: var(--dark-text);
+}
+
+.dark .stock-info p,
+.dark .alert-card p {
+  color: #94a3b8;
+}
+
+.dark .alert-status {
+  background: #1e3a8a;
+  color: #93c5fd;
+}
+
+.dark .alert-modal {
+  background: var(--dark-surface);
+  color: var(--dark-text);
+  border: 1px solid var(--dark-border);
+}
+
+.dark .alert-modal input {
+  background: var(--dark-bg);
+  border-color: var(--dark-border);
+  color: var(--dark-text);
+}
+
+/* Dark theme button overrides */
+.dark .btn-danger {
+  color: var(--dark-danger);
+  border-color: var(--dark-danger);
+}
+
+.dark .btn-danger:hover {
+  background: var(--dark-danger);
+  color: var(--dark-bg);
+  box-shadow: 0 2px 4px rgba(248, 113, 113, 0.2);
+}
+
+.dark .delete-alert-btn {
+  color: var(--dark-danger);
+  border-color: var(--dark-danger);
+}
+
+.dark .delete-alert-btn:hover {
+  background: var(--dark-danger);
+  color: var(--dark-bg);
+  box-shadow: 0 2px 4px rgba(248, 113, 113, 0.2);
+}
+
+/* Remove the media query based dark theme */
+@media (prefers-color-scheme: dark) {
+  /* Remove this section as we're using class-based theming now */
+}

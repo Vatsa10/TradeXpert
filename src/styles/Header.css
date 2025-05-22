@@ -1,0 +1,211 @@
+.header {
+  background-color: var(--bg-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 0.8rem 0;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  z-index: 1000;
+  transition: all 0.4s ease;
+  height: 60px;
+}
+
+.header-content {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  height: 100%;
+}
+
+.nav-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-left: 0;
+}
+
+.nav-menu {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  align-items: center;
+  margin: 0;
+  height: 100%;
+}
+
+.nav-item {
+  text-decoration: none;
+  color: var(--text-color);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.nav-item:after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  bottom: 0;
+  left: 50%;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  transition: all 0.3s ease;
+  transform: translateX(-50%);
+}
+
+.nav-item:hover:after {
+  width: 80%;
+}
+
+.nav-item:hover {
+  color: var(--primary-color);
+  background-color: rgba(var(--hover-bg-rgb), 0.1);
+}
+
+.icons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  align-items: center;
+  margin-left: 0;
+  height: 100%;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  padding: 0.6rem;
+  font-size: 1.1rem;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: var(--text-color);
+  position: relative;
+}
+
+.icon-button:hover {
+  background-color: rgba(var(--hover-bg-rgb), 0.1);
+  transform: translateY(-2px);
+  color: var(--primary-color);
+}
+
+.logout {
+  padding: 0.6rem 1.2rem;
+  border-radius: 25px;
+  background: linear-gradient(135deg, rgb(226, 43, 43), rgb(145, 4, 4));
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-left: 1rem;
+}
+
+.logout:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  filter: brightness(110%);
+}
+
+.login-button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgb(0, 123, 255), rgb(0, 82, 174));
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-left: 1rem;
+}
+.signup-button{
+  padding: 0.6rem 1.2rem;
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgb(50, 182, 118), rgb(7, 108, 53));
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.login-button:hover, .signup-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  filter: brightness(110%);
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+
+  margin-right: 0;
+  padding-left: 0.5rem;
+}
+
+.logo-icon {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo-text {
+  color: var(--text-color);
+  -webkit-text-fill-color: initial;
+}
+
+@media (max-width: 1024px) {
+  .header-content {
+    grid-template-columns: auto 1fr auto;
+    padding: 0 1rem;
+  }
+  
+  .nav-container {
+    gap: 1rem;
+  }
+  
+  .nav-menu {
+    gap: 1rem;
+  }
+  
+  .icons {
+    gap: 0.4rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-content {
+    padding: 0 1rem;
+    grid-template-columns: 160px 1fr 300px;
+  }
+  
+  .nav-menu {
+    gap: 1rem;
+  }
+  
+  .logo {
+    font-size: 1.6rem;
+  }
+}

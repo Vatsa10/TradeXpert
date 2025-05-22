@@ -1,0 +1,120 @@
+.analysis-panel {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 800px;
+    margin: 20px auto;
+    color: var(--text-color);
+    transition: background-color 0.3s, color 0.3s;
+  }
+  
+  .panel-header {
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  .panel-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+  }
+  
+  .panel-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-color);
+    margin: 4px 0 0 0;
+  }
+  
+  .panel-content {
+    padding: 24px;
+  }
+  
+  .sentiment-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .sentiment-title {
+    font-size: 1.25rem;
+    font-weight: 500;
+    color: var(--text-color);
+    margin-bottom: 16px;
+  }
+  
+  .chart-container {
+    width: 100%;
+    height: 400px;
+    display: flex;
+    justify-content: center;
+  }
+  
+  .legend-label {
+    font-size: 0.875rem;
+    color: var(--text-color);
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 640px) {
+    .analysis-panel {
+      margin: 16px;
+    }
+  
+    .panel-header {
+      padding: 16px;
+    }
+  
+    .panel-content {
+      padding: 16px;
+    }
+  
+    .chart-container {
+      height: 300px;
+    }
+  }
+  
+  .news-sentiment-container {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    color: var(--text-color);
+    transition: background-color 0.3s, color 0.3s;
+  }
+  
+  .news-sentiment-header {
+    margin-bottom: 20px;
+  }
+  
+  .news-sentiment-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+  }
+  
+  .news-sentiment-subtitle {
+    font-size: 1rem;
+    color: var(--text-color);
+    margin: 4px 0 0 0;
+  }
+  
+  .news-sentiment-content {
+    padding: 24px;
+  }
+  
+  @media (max-width: 640px) {
+    .news-sentiment-container {
+      margin: 16px;
+    }
+  
+    .news-sentiment-content {
+      padding: 16px;
+    }
+  
+    .chart-container {
+      height: 300px;
+    }
+  }

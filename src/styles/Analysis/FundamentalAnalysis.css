@@ -1,0 +1,227 @@
+/* FundamentalAnalysis.css */
+.analysis-panel {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 105%; /* Increased width */
+  padding: 20px;
+  margin: 20px auto;
+  color: var(--text-color);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.analysis-container {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.analysis-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.analysis-header h2 {
+  font-size: 24px;
+  color: var(--text-color);
+}
+
+.metric-card {
+  background-color: var(--card-bg);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+}
+
+.metric-label {
+  font-size: 0.875rem;
+  color: var(--text-color);
+  margin-bottom: 0.5rem;
+}
+
+.metric-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.json-display {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 2rem;
+  color: var(--text-color);
+}
+
+.json-key {
+  color: var(--text-color);
+}
+
+.json-string {
+  color: #f97316;
+}
+
+.json-number {
+  color: #10b981;
+}
+
+.json-bracket {
+  color: var(--text-color);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr); /* Three columns */
+  gap: 48px; /* Increased gap */
+}
+
+/* Dark theme styles */
+.dark .analysis-panel,
+.dark .analysis-container,
+.dark .metric-card,
+.dark .json-display {
+  background-color: #111112;
+  color: #f9fafb;
+}
+
+.dark .metric-label,
+.dark .metric-value,
+.dark .json-key,
+.dark .json-bracket {
+  color: #f9fafb;
+}
+
+.dark .json-string {
+  color: #f97316;
+}
+
+.dark .json-number {
+  color: #10b981;
+}
+
+/* Dark theme JSON display */
+body.dark-theme .json-display {
+  background-color: #111111;
+  border: 1px solid #222222;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+body.dark-theme .analysis-container {
+  background-color: #111111;
+  border: 1px solid #222222;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+body.dark-theme .json-key {
+  color: #d1d5db;  /* Changed from blue to light gray */
+}
+
+body.dark-theme .json-string {
+  color: #34d399;  /* Keep green for strings */
+}
+
+body.dark-theme .json-number {
+  color: #f87171;  /* Keep red for numbers */
+}
+
+body.dark-theme .json-bracket {
+  color: #ffffff;  /* White color for brackets */
+}
+
+body.dark-theme .ml-4,
+body.dark-theme .ml-8 {
+  border-left: 1px solid #222222;  /* Changed from blue to dark gray */
+  margin-left: 1rem;
+  padding-left: 1rem;
+}
+
+/* Card styles for dark theme */
+body.dark-theme .analysis-container {
+  background-color: #111111;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-theme .metric-card {
+  background-color: #111111;
+  border: 1px solid #222222;
+}
+
+/* Text colors for dark theme */
+body.dark-theme .metric-label,
+body.dark-theme .metric-value {
+  color: #ffffff;
+}
+
+/* Update metrics grid for dark theme */
+body.dark-theme .metrics-grid {
+  background-color: #111111;
+}
+
+body.dark-theme .metric-card {
+  background-color: #111111;
+  border: 1px solid #222222;
+  color: #ffffff;
+}
+
+/* Dark theme styles - updated */
+body.dark-theme .analysis-panel,
+body.dark-theme .analysis-container {
+  background-color: #121212;
+  border: 1px solid #1f1f1f;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-theme .metric-card {
+  background-color: #0f0f0f;
+  border: 1px solid #1f1f1f;
+}
+
+body.dark-theme .json-display {
+  background-color: #0f0f0f;
+  border: 1px solid #1f1f1f;
+}
+
+body.dark-theme .json-key {
+  color: #e2e2e2;
+}
+
+body.dark-theme .json-string {
+  color: #34d399;  /* Green for strings */
+}
+
+body.dark-theme .json-number {
+  color: #f87171;  /* Red for numbers */
+}
+
+body.dark-theme .json-bracket {
+  color: #ffffff;  /* White for brackets */
+}
+
+body.dark-theme .metric-card {
+  background-color: #111111;
+  border: 1px solid #222222;
+  color: #ffffff;
+}
+
+body.dark-theme .metric-label,
+body.dark-theme .metric-value {
+  color: #ffffff;
+}
+
+body.dark-theme .ml-4,
+body.dark-theme .ml-8 {
+  border-left: 1px solid #222222;
+}

@@ -1,0 +1,111 @@
+/* TechnicalAnalysis.css */
+.technical-json {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+  color: var(--text-color);
+}
+
+.technical-json .key {
+  color: var(--text-color);
+}
+
+.technical-json .string {
+  color: #ef4444;
+}
+
+.technical-json .number {
+  color: #10b981;
+}
+
+.technical-json .bracket {
+  color: var(--text-color);
+}
+
+.chart-container {
+  width: 100%;
+  height: 600px;
+  margin-top: 24px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.chart-container .recharts-surface {
+  overflow: visible;
+}
+
+.technical-analysis-wrapper {
+  background-color: var(--bg-color);
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.technical-analysis-container {
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  max-width: 100%;
+  overflow: auto; /* Changed back to auto to allow scrolling */
+  padding: 24px;
+  padding-bottom: 60px; /* Increased bottom padding */
+  margin: 20px 0;
+  margin-bottom: 40px; /* Added margin bottom */
+}
+
+.technical-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.technical-header h2 {
+  font-size: 24px;
+  color: var(--text-color);
+}
+
+.technical-header .icon {
+  color: var(--text-color);
+}
+
+/* Dark theme specific styles */
+body.dark-theme .technical-analysis-container {
+  background-color: #111111;
+  border: 1px solid #222222;
+}
+
+body.dark-theme .technical-json {
+  background-color: #111111;
+  border: 1px solid #222222;
+  color: #ffffff;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+body.dark-theme .key {
+  color: #d1d5db;  /* Light gray instead of blue */
+}
+
+body.dark-theme .string {
+  color: #34d399;  /* Green */
+}
+
+body.dark-theme .number {
+  color: #f87171;  /* Red */
+}
+
+body.dark-theme .bracket {
+  color: #ffffff;
+}
+
+body.dark-theme .chart-container {
+  background-color: #111111;
+  border: 1px solid #222222;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}

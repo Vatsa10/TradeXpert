@@ -1,0 +1,154 @@
+.analysis-panel {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.analysis-panel h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 16px;
+}
+
+.analysis-panel .chart-container {
+  margin-top: 20px;
+}
+
+.analysis-panel .metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.analysis-panel .metric-card {
+  background-color: var(--bg-color);
+  border-radius: 8px;
+  padding: 20px;
+  transition: transform 0.2s ease;
+}
+
+.analysis-panel .metric-card:hover {
+  transform: translateY(-2px);
+}
+
+.analysis-panel .metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.analysis-panel .metric-title {
+  color: var(--text-color);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.analysis-panel .metric-icon {
+  color: var(--text-color);
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.analysis-panel .metric-body {
+  display: flex;
+  align-items: baseline;
+}
+
+.analysis-panel .metric-value {
+  color: var(--text-color);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.analysis-panel .metric-change {
+  font-size: 1rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+.analysis-panel .metric-change.positive {
+  color: #059669;
+}
+
+.analysis-panel .metric-change.negative {
+  color: #dc2626;
+}
+
+/* Dark theme enhancements */
+body.dark-theme .analysis-panel {
+  background-color: #121212;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-theme .metric-card {
+  background-color: #0f0f0f;
+  border: 1px solid #1f1f1f;
+}
+
+body.dark-theme .metric-title,
+body.dark-theme .metric-value,
+body.dark-theme .metric-label {
+  color: var(--text-color-dark);
+}
+
+body.dark-theme .metric-change.positive {
+  color: var(--chart-positive-dark);
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+body.dark-theme .metric-change.negative {
+  color: var(--chart-negative-dark);
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+body.dark-theme .chart-container {
+  background-color: #0f0f0f;
+  border: 1px solid #1f1f1f;
+  border-radius: 8px;
+}
+
+/* JSON display dark theme */
+body.dark-theme .json-display {
+  background-color: #111111;
+  border: 1px solid #222222;
+}
+
+body.dark-theme .json-key {
+  color: #d1d5db;
+}
+
+body.dark-theme .json-string {
+  color: #34d399;
+}
+
+body.dark-theme .json-number {
+  color: #f87171;
+}
+
+/* Chart text colors */
+body.dark-theme text {
+  fill: var(--chart-text-dark);
+}
+
+body.dark-theme .recharts-cartesian-grid-horizontal line,
+body.dark-theme .recharts-cartesian-grid-vertical line {
+  stroke: #222222;
+}
+
+body.dark-theme .recharts-tooltip-wrapper {
+  background-color: #111111;
+  border-color: #222222;
+}
+
+body.dark-theme .custom-tooltip {
+  background-color: #111111;
+  border: 1px solid #222222;
+  color: #ffffff;
+}

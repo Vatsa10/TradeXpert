@@ -1,0 +1,302 @@
+.analytics-panel {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  width: 105%;
+  padding: 24px;
+  margin: 20px auto;
+  color: var(--text-color);
+  transition: all 0.3s ease;
+  border: 1px solid var(--border-color);
+}
+
+.panel-header {
+  background: linear-gradient(
+    to right,
+    rgba(52, 211, 153, 0.1),
+    rgba(52, 211, 153, 0.05)
+  );
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.panel-title {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.panel-subtitle {
+  font-size: 14px;
+  color: var(--text-color);
+  margin: 5px 0 0 0;
+}
+
+.controls-section {
+  margin-bottom: 20px;
+}
+
+.prediction-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.prediction-header h3 {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0;
+  color: var(--text-color);
+}
+
+.timeframe-selector {
+  position: relative;
+}
+
+.select-dropdown {
+  padding: 10px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--card-bg);
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  color: var(--text-color);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.select-dropdown:hover {
+  border-color: #34d399;
+  box-shadow: 0 2px 8px rgba(52, 211, 153, 0.2);
+}
+
+.metrics-banner {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 10px 15px;
+  display: flex;
+  gap: 20px;
+}
+
+.metric {
+  font-size: 14px;
+  color: #333;
+}
+
+.negative {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+.positive {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.chart-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.chart-wrapper {
+  background: linear-gradient(
+    to bottom,
+    rgba(52, 211, 153, 0.05),
+    rgba(0, 0, 0, 0)
+  );
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 24px;
+}
+
+#chartcontrols {
+  background-color: var(--card-bg);
+  border-radius: 8px 8px 0 0;
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  padding: 12px;
+}
+
+#chartdiv {
+  background-color: var(--card-bg);
+  border-radius: 0 0 8px 8px;
+  border: 1px solid var(--border-color);
+  height: 600px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .analytics-panel {
+    padding: 15px;
+  }
+
+  .prediction-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .metrics-banner {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .chart-container {
+    margin-top: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .panel-title {
+    font-size: 20px;
+  }
+
+  .prediction-header h3 {
+    font-size: 16px;
+  }
+
+  .metrics-banner {
+    padding: 8px 12px;
+  }
+}
+
+/* Dark theme enhancements */
+[data-theme="dark"] .analytics-panel {
+  background-color: #121212;
+  border: 1px solid #1f1f1f;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .panel-header {
+  background: linear-gradient(
+    to right,
+    rgba(52, 211, 153, 0.15),
+    rgba(52, 211, 153, 0.05)
+  );
+}
+
+[data-theme="dark"] #chartcontrols,
+[data-theme="dark"] #chartdiv {
+  background-color: #0f0f0f;
+  border-color: #1f1f1f;
+}
+
+[data-theme="dark"] .select-dropdown {
+  background-color: #0f0f0f;
+  border-color: #1f1f1f;
+}
+
+[data-theme="dark"] .select-dropdown:hover {
+  border-color: #34d399;
+  box-shadow: 0 2px 8px rgba(52, 211, 153, 0.15);
+}
+
+/* Light theme specific styles */
+[data-theme="light"] .panel-title {
+  color: #1a1a1a;
+  background: linear-gradient(to right, #059669, #047857);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+[data-theme="light"] .panel-subtitle {
+  color: #4b5563;
+}
+
+[data-theme="light"] .prediction-header h3 {
+  color: #1a1a1a;
+}
+
+[data-theme="light"] .select-dropdown {
+  background-color: #ffffff;
+  color: #1a1a1a;
+  border-color: #e5e7eb;
+}
+
+[data-theme="light"] .select-dropdown:hover {
+  border-color: #059669;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.2);
+}
+
+[data-theme="light"] .metric {
+  color: #4b5563;
+}
+
+[data-theme="light"] .negative {
+  color: #dc2626;
+}
+
+[data-theme="light"] .positive {
+  color: #059669;
+}
+
+/* AmCharts specific styles */
+.am5stock-control {
+  color: var(--text-color) !important;
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.am5stock-control:hover {
+  background-color: var(--border-color) !important;
+}
+
+.am5stock-control-active {
+  background-color: #34d399 !important;
+  color: white !important;
+}
+
+.am5stock-control-dropdown {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-color) !important;
+}
+
+.am5stock-control-dropdown-item:hover {
+  background-color: rgba(52, 211, 153, 0.1) !important;
+}
+
+.am5stock-drawing-toolbar {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.am5stock-drawing-toolbar button {
+  color: var(--text-color) !important;
+}
+
+/* Light theme specific chart controls */
+[data-theme="light"] .am5stock-control {
+  color: #1a1a1a !important;
+  background-color: #ffffff !important;
+  border-color: #e5e7eb !important;
+}
+
+[data-theme="light"] .am5stock-control:hover {
+  background-color: #f9fafb !important;
+}
+
+[data-theme="light"] .am5stock-control-dropdown {
+  background-color: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Dark theme specific chart controls */
+[data-theme="dark"] .am5stock-control {
+  color: #ffffff !important;
+  background-color: #1f1f1f !important;
+  border-color: #2d2d2d !important;
+}
+
+[data-theme="dark"] .am5stock-control:hover {
+  background-color: #2d2d2d !important;
+}
+
+[data-theme="dark"] .am5stock-control-dropdown {
+  background-color: #1f1f1f !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+}
