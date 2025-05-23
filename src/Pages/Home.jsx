@@ -29,7 +29,7 @@ function Home() {
   const { theme } = useTheme();
 
   const marketOverview = {
-    dowJones: { value: "34,945.47", change: "+1.2%" },
+    dowJones: { value: "24,714", change: "+.42%" },
     sp500: { value: "4,505.10", change: "+0.8%" },
     nasdaq: { value: "14,113.70", change: "+1.5%" },
     marketSentiment: "Bullish"

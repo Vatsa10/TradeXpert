@@ -17,7 +17,7 @@ const MarketOverview = ({ marketOverview }) => {
             <div className="stat-card">
               <FaChartLine className="stat-icon" />
               <div className="stat-content">
-                <h3>Dow Jones</h3>
+                <h3>NIFTY 50</h3>
                 <p>{marketOverview.dowJones.value}</p>
                 <span className="change positive">{marketOverview.dowJones.change}</span>
               </div>
@@ -33,7 +33,7 @@ const MarketOverview = ({ marketOverview }) => {
               <FaExchangeAlt className="stat-icon" />
               <div className="stat-content">
                 <h3>Trading Volume</h3>
-                <p>2.1B</p>
+                <p>3.6B</p>
                 <span className="change">+15% avg</span>
               </div>
             </div>
