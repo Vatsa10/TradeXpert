@@ -2104,4 +2104,92 @@ TATASTEEL: {
         ]
     }
 },
+ELECON: {
+    name: "Elecon Engineering Company Ltd.",
+    technical: {
+        price_trend: "BULLISH",
+        key_levels: { support: 1_200, resistance: 1_600 },
+        moving_averages: { "50_day": "ABOVE", "200_day": "ABOVE" }
+    },
+    fundamental: {
+        valuation: "FAIR",
+        key_metrics: { pe_ratio_analysis: "55.5", market_cap_assessment: "₹13,500 Cr" },
+        metrics: {
+            market_cap: "₹13,500 Cr",
+            week_52_high: "₹739.00",
+            dividend_yield: "0.21%",
+            pe_ratio: "35.5",
+            week_52_low: "₹340.00",
+            beta: "0.85"
+        }
+    },
+    ai_insights: {
+        feature_importance: [
+            { factor: 'Technical', weight: 0.29, percentage: '29.0%', color: '#86efac' },
+            { factor: 'Sentiment', weight: 0.18, percentage: '18.0%', color: '#818cf8' },
+            { factor: 'Fundamental', weight: 0.23, percentage: '23.0%', color: '#818cf8' },
+            { factor: 'Historical', weight: 0.12, percentage: '12.0%', color: '#818cf8' },
+            { factor: 'News', weight: 0.08, percentage: '8.0%', color: '#e9d5ff' },
+            { factor: 'Volatility', weight: 0.06, percentage: '6.0%', color: '#cbd5e1' },
+            { factor: 'Market Trends', weight: 0.03, percentage: '3.0%', color: '#cbd5e1' },
+            { factor: 'Sector Performance', weight: 0.01, percentage: '1.0%', color: '#cbd5e1' }
+        ]
+    },
+    performance: {
+        metrics: [
+            { title: 'Prediction Accuracy', value: '84.7%', change: '+2.4%' },
+            { title: 'Average Return', value: '18.2%', change: '+2.2%' },
+            { title: 'Risk Score', value: 'Medium', type: 'risk' }
+        ]
+    },
+    news_sentiment: {
+        distribution: [
+            { name: 'Positive', value: 61, color: '#4ade80' },
+            { name: 'Neutral', value: 29, color: '#60a5fa' },
+            { name: 'Negative', value: 10, color: '#f87171' }
+        ]
+    },
+    predictive: {
+        confidence_score: 81,
+        predicted_change: '+7.1%',
+        risk_level: 'Medium',
+        historical_data: [
+    { Date: new Date(2024, 10, 1).getTime(), Close: 566.40 },
+    { Date: new Date(2024, 11, 2).getTime(), Close: 545.10 },
+    { Date: new Date(2024, 12, 3).getTime(), Close: 520.15 },
+    { Date: new Date(2025, 1, 4).getTime(), Close: 459.85 },
+    { Date: new Date(2025, 2, 5).getTime(), Close: 416.60 },
+    { Date: new Date(2025, 3, 6).getTime(), Close: 573.90 },
+    { Date: new Date(2025, 4, 15).getTime(), Close: 679.80 }
+        ],
+        predicted_data: [
+    { Date: new Date(2025, 4, 15).getTime(), Close: 679.80 },
+    { Date: new Date(2025, 4, 30).getTime(), Close: 691.06 },
+    { Date: new Date(2025, 5, 14).getTime(), Close: 702.32 },
+    { Date: new Date(2025, 5, 29).getTime(), Close: 713.58 },
+    { Date: new Date(2025, 6, 14).getTime(), Close: 724.84 },
+    { Date: new Date(2025, 6, 29).getTime(), Close: 736.10 },
+    { Date: new Date(2025, 7, 14).getTime(), Close: 747.36 },
+    { Date: new Date(2025, 7, 29).getTime(), Close: 758.62 },
+    { Date: new Date(2025, 8, 13).getTime(), Close: 769.88 },
+    { Date: new Date(2025, 8, 28).getTime(), Close: 781.14 },
+    { Date: new Date(2025, 9, 13).getTime(), Close: 792.40 },
+    { Date: new Date(2025, 9, 28).getTime(), Close: 803.66 },
+    { Date: new Date(2025, 10, 12).getTime(), Close: 814.92 },
+    { Date: new Date(2025, 10, 27).getTime(), Close: 826.18 },
+    { Date: new Date(2025, 11, 12).getTime(), Close: 837.44 },
+    { Date: new Date(2025, 11, 27).getTime(), Close: 848.70 },
+    { Date: new Date(2026, 0, 11).getTime(), Close: 859.96 },
+    { Date: new Date(2026, 0, 26).getTime(), Close: 871.22 },
+    { Date: new Date(2026, 1, 10).getTime(), Close: 882.48 },
+    { Date: new Date(2026, 1, 25).getTime(), Close: 893.74 },
+    { Date: new Date(2026, 2, 12).getTime(), Close: 905.00 },
+    { Date: new Date(2026, 2, 27).getTime(), Close: 916.26 },
+    { Date: new Date(2026, 3, 11).getTime(), Close: 927.52 },
+    { Date: new Date(2026, 3, 26).getTime(), Close: 938.78 },
+    { Date: new Date(2026, 4, 11).getTime(), Close: 950.04 }
+        ]
+    }
+},
+
 };

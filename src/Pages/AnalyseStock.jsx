@@ -34,6 +34,7 @@ const TOP_COMPANIES = {
   MRF:"Madras Rubber Factory",
   ADANIENT:"Adani Enterprises Limited",
   TATASTEEL:"Tata Steel Limited",
+  ELECON: "Elecon Engineering Company Limited",
 };
 
 const AnalyseStock = () => {
