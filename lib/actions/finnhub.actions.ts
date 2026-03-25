@@ -220,23 +220,77 @@ export const searchStocks = cache(
 );
 
 
+export const getAIAnalysisContext = cache(async (symbol: string) => {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
+
+  try {
+    const [quote, profile, metrics, news] = await Promise.all([
+      fetchJSON<any>(`${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${token}`),
+      fetchJSON<any>(`${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${token}`, 3600),
+      fetchJSON<any>(`${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${token}`, 1800),
+      fetchJSON<any[]>(`${FINNHUB_BASE_URL}/company-news?symbol=${cleanSymbol}&from=${getDateRange(7).from}&to=${getDateRange(7).to}&token=${token}`, 300),
+    ]);
+
+    // Construct a rich "TradingView-style" data dump for the AI
+    const context = {
+      price_data: {
+        current: quote.c,
+        change: quote.d,
+        change_percent: quote.dp,
+        high_day: quote.h,
+        low_day: quote.l,
+        open: quote.o,
+        prev_close: quote.pc,
+      },
+      financial_metrics: {
+        market_cap: profile.marketCapitalization,
+        pe_ratio: metrics.metric?.peNormalizedAnnual || metrics.metric?.peBasicExclExtraTTM,
+        pb_ratio: metrics.metric?.pbAnnual || metrics.metric?.pbQuarterly,
+        dividend_yield: metrics.metric?.dividendYieldIndicatedAnnual,
+        eps_ttm: metrics.metric?.epsExclExtraItemsTTM,
+        revenue_growth_yoy: metrics.metric?.revenueGrowthYoy,
+        net_profit_margin: metrics.metric?.netProfitMarginTTM,
+        debt_to_equity: metrics.metric?.totalDebtTotalEquityQuarterly,
+        fifty_two_week_high: metrics.metric?.["52WeekHigh"],
+        fifty_two_week_low: metrics.metric?.["52WeekLow"],
+        fifty_two_week_price_return: metrics.metric?.["52WeekPriceReturnDaily"],
+      },
+      company_profile: {
+        name: profile.name,
+        industry: profile.finnhubIndustry,
+        ipo_date: profile.ipo,
+        summary: `Large cap ${profile.finnhubIndustry} company operating in the ${profile.country} market.`
+      },
+      recent_headlines: (news || []).slice(0, 5).map(n => ({
+        headline: n.headline,
+        summary: n.summary,
+        datetime: n.datetime
+      }))
+    };
+
+    return JSON.stringify(context, null, 2);
+  } catch (error) {
+    console.error(`Error fetching AI context for ${cleanSymbol}:`, error);
+    return JSON.stringify({ error: "Insufficient data available for this ticker." });
+  }
+});
+
 export const getStocksDetails = cache(async (symbol: string) => {
   const cleanSymbol = symbol.trim().toUpperCase();
+  const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
 
   try {
     const [quote, profile, financials] = await Promise.all([
       fetchJSON(
-        // Price data - no caching for accuracy
-        `${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`
+        `${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${token}`
       ),
       fetchJSON(
-        // Company info - cache 1hr (rarely changes)
-        `${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`,
+        `${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${token}`,
         3600
       ),
       fetchJSON(
-        // Financial metrics (P/E, etc.) - cache 30min
-        `${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${NEXT_PUBLIC_FINNHUB_API_KEY}`,
+        `${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${token}`,
         1800
       ),
     ]);

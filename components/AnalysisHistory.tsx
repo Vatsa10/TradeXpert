@@ -76,102 +76,84 @@ export default function AnalysisHistory({
   return (
     <div className="flex flex-col h-full bg-transparent">
       {/* Sidebar Header */}
-      <div className="p-6 border-b border-white/[0.05] bg-white/[0.02] backdrop-blur-3xl">
+      <div className="p-6 border-b border-white/[0.04] bg-white/[0.01]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
-              <History className="w-4 h-4 text-indigo-400" />
-            </div>
+            <History className="w-4 h-4 text-gray-700" />
             <div>
-              <h2 className="text-sm font-black text-white uppercase tracking-widest">History</h2>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{history.length} Reports Saved</p>
+              <h2 className="text-xs font-bold text-white uppercase tracking-widest">History</h2>
+              <p className="text-[9px] text-gray-600 font-bold uppercase tracking-wider">{history.length} Reports</p>
             </div>
           </div>
           {selectedIds.length === 2 && (
             <Button 
               size="sm" 
-              className="bg-indigo-600 hover:bg-indigo-500 h-8 px-4 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/40 animate-in zoom-in"
+              className="bg-white text-black hover:bg-white/90 h-7 px-3 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-xl animate-in fade-in zoom-in"
               onClick={() => router.push(`/analysis/compare?ids=${selectedIds.join(",")}`)}
             >
-              Compare (2)
+              Compare
             </Button>
           )}
         </div>
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-3">
+        <div className="p-4 space-y-2">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 animate-pulse">
-              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin mb-2" />
-              <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Retrieving...</span>
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="w-5 h-5 text-gray-800 animate-spin mb-2" />
+              <span className="text-[10px] font-bold text-gray-700 uppercase tracking-widest">Loading Archive</span>
             </div>
           ) : history.length === 0 ? (
             <div className="py-20 text-center space-y-4">
-              <div className="mx-auto w-12 h-12 bg-white/[0.02] border border-white/[0.05] rounded-2xl flex items-center justify-center">
-                <BarChart2 className="w-6 h-6 text-gray-700" />
+              <div className="mx-auto w-10 h-10 bg-white/[0.01] border border-white/[0.03] rounded-xl flex items-center justify-center">
+                <BarChart2 className="w-5 h-5 text-gray-800" />
               </div>
-              <div className="space-y-1">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Intelligence Archive Empty</p>
-                <p className="text-[10px] text-gray-600 uppercase font-bold tracking-wider leading-none">Your analysis reports will appear here</p>
-              </div>
+              <p className="text-[10px] font-bold text-gray-700 uppercase tracking-widest leading-none">Archive Empty</p>
             </div>
           ) : (
             history.map((item) => (
               <div 
                 key={item.requestId}
                 className={cn(
-                  "group relative p-4 rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden",
+                  "group relative p-3 rounded-xl border transition-all duration-200 cursor-pointer",
                   selectedIds.includes(item.requestId) 
-                    ? "bg-indigo-500/[0.08] border-indigo-500/40 shadow-xl" 
-                    : "bg-white/[0.01] border-white/[0.03] hover:border-white/10 hover:bg-white/[0.03]"
+                    ? "bg-white/[0.03] border-indigo-500/30 shadow-sm" 
+                    : "bg-white/[0.01] border-white/[0.02] hover:border-white/10 hover:bg-white/[0.02]"
                 )}
                 onClick={() => onSelect(item.requestId)}
               >
-                {/* Visual Indicator of Select */}
-                {selectedIds.includes(item.requestId) && (
-                  <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
-                )}
-
                 <div className="flex items-start justify-between relative z-10">
-                  <div className="flex items-start gap-4">
-                    <div className="pt-1">
-                      <Checkbox 
-                        checked={selectedIds.includes(item.requestId)}
-                        onCheckedChange={(checked) => handleCheckboxChange(item.requestId, !!checked)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="rounded-full border-white/20 data-[state=checked]:bg-indigo-500 data-[state=checked]:border-indigo-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
+                  <div className="flex items-start gap-3">
+                    <Checkbox 
+                      checked={selectedIds.includes(item.requestId)}
+                      onCheckedChange={(checked) => handleCheckboxChange(item.requestId, !!checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-0.5 rounded-sm border-white/10 data-[state=checked]:bg-white data-[state=checked]:text-black h-3 w-3"
+                    />
+                    <div className="space-y-0.5">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-black text-white tracking-tight">{item.symbol}</span>
-                        <Badge variant="outline" className={cn(
-                          "text-[8px] h-4 px-1.5 font-black uppercase tracking-widest border-none",
-                          item.status === "completed" ? "bg-indigo-500/10 text-indigo-400" : "bg-amber-500/10 text-amber-500"
+                        <span className="text-xs font-bold text-white tracking-tight">{item.symbol}</span>
+                        <span className={cn(
+                          "text-[8px] px-1 font-bold uppercase tracking-widest",
+                          item.status === "completed" ? "text-indigo-400" : "text-amber-500"
                         )}>
                           {item.status}
-                        </Badge>
-                      </div>
-                      <p className="text-[10px] text-gray-500 font-bold uppercase truncate max-w-[120px]">{item.companyName}</p>
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <History className="w-3 h-3 text-gray-600" />
-                        <span className="text-[9px] text-gray-600 font-black uppercase tracking-tighter">
-                          {format(new Date(item.createdAt), "MMM d, h:mm a")}
                         </span>
                       </div>
+                      <p className="text-[9px] text-gray-600 font-medium uppercase truncate max-w-[120px]">{item.companyName}</p>
+                      <span className="text-[8px] text-gray-700 font-bold uppercase tracking-tighter">
+                        {format(new Date(item.createdAt), "MMM d, h:mm a")}
+                      </span>
                     </div>
                   </div>
                   
-                  <div className="flex flex-col items-end gap-2">
-                    <button 
-                      onClick={(e) => handleDelete(e, item.requestId)}
-                      className="opacity-0 group-hover:opacity-100 p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all transform hover:scale-110"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                    <ArrowRight className="w-3 h-3 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity -rotate-45" />
-                  </div>
+                  <button 
+                    onClick={(e) => handleDelete(e, item.requestId)}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-gray-700 hover:text-rose-500 transition-all"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
                 </div>
               </div>
             ))

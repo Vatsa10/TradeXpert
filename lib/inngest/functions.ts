@@ -5,7 +5,7 @@ import {
 } from "./prompts";
 import { sendNewsSummaryEmail, sendWelcomeEmail } from "../nodemailer/index";
 import { getFormattedTodayDate } from "../utils";
-import { getNews } from "../actions/finnhub.actions";
+import { getNews, getAIAnalysisContext } from "../actions/finnhub.actions";
 import { getWatchlistSymbolsByEmail } from "../actions/watchlist.actions";
 import { getAllUsersForNewsEmail } from "../actions/user.actions";
 import { getStockPrice, getRecentNews } from "../analysis/tools";
@@ -167,11 +167,15 @@ export const runStockAnalysis = inngest.createFunction(
   async ({ event, step }: any) => {
     const { requestId, symbol, companyName, userEmail } = event.data;
 
-    // 1. Fetch Data
+    // 1. Fetch Data (Rich Finnhub Context + Fallback tools)
     const { stockData, newsData } = await step.run("fetch-data", async () => {
-      const stock = await getStockPrice(symbol);
+      // Get the rich "TradingView-style" context from Finnhub
+      const richContext = await getAIAnalysisContext(symbol);
+      
+      // Fallback/Supplemental news if needed (optional, richContext already has some)
       const news = await getRecentNews(companyName);
-      return { stockData: stock, newsData: news };
+      
+      return { stockData: richContext, newsData: news };
     });
 
     // 2. Quantitative Analysis

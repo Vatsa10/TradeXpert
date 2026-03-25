@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,10 +5,15 @@ import { getAnalysisStatusAction } from "@/lib/actions/analysis.actions";
 import { InvestmentReport as StockAnalysisReport } from "@/lib/analysis/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Scale, TrendingUp, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowLeft, Scale, TrendingUp, AlertTriangle, CheckCircle2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import TradingViewWidget from "@/components/TradingViewWidget";
+import { TECHNICAL_ANALYSIS_WIDGET_CONFIG, SYMBOL_INFO_WIDGET_CONFIG } from "@/lib/constants";
+
+const TV_SYMBOL_INFO_URL = "https://www.tradingview.com/external-embedding/embed-widget-symbol-info.js";
+const TV_TECHNICAL_ANALYSIS_URL = "https://www.tradingview.com/external-embedding/embed-widget-technical-analysis.js";
 
 interface ComparisonReport extends StockAnalysisReport {
   requestId: string;
@@ -51,90 +55,136 @@ export default function ComparisonView({ ids }: { ids: string[] }) {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="text-gray-400">
+    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
+      <div className="flex items-center justify-between border-b border-white/[0.04] pb-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="text-gray-500 hover:text-white">
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-2">
-            <Scale className="w-6 h-6 text-indigo-400" />
-            <h1 className="text-2xl font-bold text-white tracking-tight">Report Comparison</h1>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+              <Scale className="w-6 h-6 text-indigo-400" />
+              Comparative Intelligence
+            </h1>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-widest">Cross-referencing TV Metrics & AI Sentiment</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         {reports.map((report, idx) => (
-          <div key={report.requestId} className="space-y-6">
-            <Card className="bg-slate-900/50 border-white/10 backdrop-blur-xl overflow-hidden group">
-              <div className={cn(
-                "h-1 w-full",
-                idx === 0 ? "bg-indigo-500" : "bg-emerald-500"
-              )} />
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Badge variant="outline" className="text-xs border-white/20 text-white px-2 py-0.5">
-                    {report.stock_symbol}
-                  </Badge>
-                  <Badge className={cn(
-                    "text-[10px] h-5",
-                    report.investment_recommendation.includes("Buy") ? "bg-emerald-500/20 text-emerald-400" :
-                      report.investment_recommendation.includes("Sell") ? "bg-rose-500/20 text-rose-400" : "bg-slate-500/20 text-slate-400"
-                  )}>
-                    {report.investment_recommendation}
-                  </Badge>
-                </div>
-                <CardTitle className="text-xl text-white group-hover:text-indigo-400 transition-colors">
-                  {report.company_name}
-                </CardTitle>
-                <div className="flex items-center gap-2 mt-2">
-                  <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-indigo-500 transition-all duration-1000"
-                      style={{ width: `${report.confidence_level}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-gray-500 font-medium">{report.confidence_level}% Confidence</span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-semibold text-white/90 mb-2 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Executive Summary
-                  </h3>
-                  <p className="text-xs text-gray-400 leading-relaxed italic">
-                    "{report.executive_summary}"
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="p-3 rounded-lg bg-white/5 border border-white/5">
-                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <TrendingUp className="w-3 h-3" /> Quantitative
-                    </h4>
-                    <p className="text-xs text-gray-300 leading-relaxed">{report.quantitative_summary}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-white/5 border border-white/5">
-                    <h4 className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      Qualitative
-                    </h4>
-                    <p className="text-xs text-gray-300 leading-relaxed">{report.qualitative_summary}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3 h-3" /> Risk Assessment
-                  </h4>
-                  <p className="text-xs text-gray-400 leading-relaxed bg-white/5 p-3 rounded-lg italic">
-                    {report.risk_assessment}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <ReportSection key={report.requestId} report={report} idx={idx} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sub-component to manage memoized TradingView configs per report
+ */
+function ReportSection({ report, idx }: { report: ComparisonReport, idx: number }) {
+  const symbolInfoConfig = (report.stock_symbol);
+  const technicalAnalysisConfig = (report.stock_symbol);
+
+  return (
+    <div className="space-y-10">
+      {/* 1. Live TradingView Metrics */}
+      <div className="space-y-4">
+         <div className="flex items-center gap-2 px-1">
+            <Zap className="w-3 h-3 text-amber-500" />
+            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Live Market Pulse</span>
+         </div>
+         <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl p-1 overflow-hidden shadow-sm">
+            <TradingViewWidget
+              scriptUrl={TV_SYMBOL_INFO_URL}
+              config={SYMBOL_INFO_WIDGET_CONFIG(report.stock_symbol)}
+              height={160}
+            />
+            <div className="p-4 bg-black/20">
+              <TradingViewWidget
+                scriptUrl={TV_TECHNICAL_ANALYSIS_URL}
+                config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(report.stock_symbol)}
+                height={380}
+              />
+            </div>
+         </div>
+      </div>
+
+      {/* 2. AI Strategic Report */}
+      <div className="space-y-4">
+         <div className="flex items-center gap-2 px-1">
+            <TrendingUp className="w-3 h-3 text-indigo-500" />
+            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">AI Strategic Verdict</span>
+         </div>
+         <Card className="bg-[#0D0D0E] border-white/[0.04] rounded-2xl shadow-sm overflow-hidden group border">
+           <div className={cn(
+             "h-1 w-full",
+             idx === 0 ? "bg-indigo-500" : "bg-violet-500"
+           )} />
+           <CardHeader className="pb-6">
+             <div className="flex items-center justify-between mb-4">
+               <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest border-white/[0.06] text-gray-400 bg-white/[0.01]">
+                 {report.stock_symbol} REPORT
+               </Badge>
+               <Badge className={cn(
+                 "text-[9px] font-black uppercase tracking-widest",
+                 report.investment_recommendation.includes("Buy") ? "bg-emerald-500/10 text-emerald-400" :
+                   report.investment_recommendation.includes("Sell") ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400"
+               )}>
+                 {report.investment_recommendation}
+               </Badge>
+             </div>
+             <CardTitle className="text-2xl font-bold text-white group-hover:text-indigo-400 transition-colors">
+               {report.company_name}
+             </CardTitle>
+             <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/[0.02]">
+               <div className="flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                     <div key={s} className={cn(
+                       "w-1 h-3 rounded-full",
+                       (report.confidence_level / 20) >= s ? (idx === 0 ? "bg-indigo-500" : "bg-violet-500") : "bg-white/5"
+                     )} />
+                   ))}
+               </div>
+               <span className="text-[9px] text-gray-600 font-bold uppercase tracking-tighter ml-1">AI Trust Index: {report.confidence_level}%</span>
+             </div>
+           </CardHeader>
+           <CardContent className="space-y-8 pb-10">
+             <div className="bg-white/[0.01] border border-white/[0.02] p-5 rounded-xl">
+               <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                 <CheckCircle2 className="w-3 h-3 text-emerald-500/60" /> Core Thesis
+               </h3>
+               <p className="text-xs text-gray-400 leading-relaxed italic">
+                 "{report.executive_summary}"
+               </p>
+             </div>
+
+             <div className="space-y-6">
+               <div className="space-y-3">
+                 <h4 className="text-[9px] font-black text-indigo-400/80 uppercase tracking-[0.2em] flex items-center gap-2">
+                   <TrendingUp className="w-3 h-3" /> Technical Analysis
+                 </h4>
+                 <p className="text-xs text-gray-500 leading-relaxed font-normal">{report.quantitative_summary}</p>
+               </div>
+               <div className="space-y-3">
+                 <h4 className="text-[9px] font-black text-violet-400/80 uppercase tracking-[0.2em] flex items-center gap-2">
+                   Sentiment & News
+                 </h4>
+                 <p className="text-xs text-gray-500 leading-relaxed font-normal">{report.qualitative_summary}</p>
+               </div>
+             </div>
+
+             <div className="pt-6 border-t border-white/[0.02]">
+               <h4 className="text-[9px] font-black text-rose-500/60 uppercase tracking-widest mb-3 flex items-center gap-2">
+                 <AlertTriangle className="w-3 h-3" /> Risk Profile
+               </h4>
+               <p className="text-xs text-gray-600 leading-relaxed bg-rose-500/[0.01] p-4 rounded-xl border border-rose-500/[0.02]">
+                 {report.risk_assessment}
+               </p>
+             </div>
+           </CardContent>
+         </Card>
       </div>
     </div>
   );
