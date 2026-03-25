@@ -3,6 +3,7 @@ import { Schema, model, models } from "mongoose";
 
 const AnalysisSchema = new Schema({
   requestId: { type: String, required: true, unique: true },
+  userEmail: { type: String, required: true, index: true },
   symbol: { type: String, required: true },
   companyName: { type: String, required: true },
   status: { type: String, enum: ["processing", "completed", "error"], default: "processing" },

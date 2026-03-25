@@ -11,13 +11,46 @@ import { Search, Loader2, TrendingUp, AlertCircle, CheckCircle2, ChevronRight, B
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-export default function AnalysisDashboard() {
+export default function AnalysisDashboard({ 
+  initialRequestId, 
+  onComplete 
+}: { 
+  initialRequestId?: string | null;
+  onComplete?: () => void;
+}) {
   const [symbol, setSymbol] = useState("");
   const [loading, setLoading] = useState(false);
-  const [requestId, setRequestId] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(initialRequestId || null);
   const [status, setStatus] = useState<"idle" | "processing" | "completed" | "error">("idle");
   const [report, setReport] = useState<StockAnalysisReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Handle loading initial report from history
+  useEffect(() => {
+    if (initialRequestId) {
+      const loadHistory = async () => {
+        setLoading(true);
+        setStatus("processing");
+        try {
+          const res = await getAnalysisStatusAction(initialRequestId);
+          if (res.status === "completed" && res.report) {
+            setReport(res.report as StockAnalysisReport);
+            setStatus("completed");
+            setSymbol(res.symbol || "");
+          } else {
+            setRequestId(initialRequestId);
+          }
+        } catch (err) {
+          console.error("Failed to load history item", err);
+          setError("Failed to load history");
+          setStatus("error");
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadHistory();
+    }
+  }, [initialRequestId]);
 
   // Polling for analysis result
   useEffect(() => {
@@ -33,6 +66,7 @@ export default function AnalysisDashboard() {
             setLoading(false);
             setRequestId(null);
             toast.success("Analysis complete!");
+            onComplete?.(); // Refresh history
           } else if (res.status === "error") {
             setError(res.error || "Analysis failed");
             setStatus("error");
@@ -49,7 +83,7 @@ export default function AnalysisDashboard() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [requestId, status]);
+  }, [requestId, status, onComplete]);
 
   const handleStartAnalysis = async (e: React.FormEvent) => {
     e.preventDefault();

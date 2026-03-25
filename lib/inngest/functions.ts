@@ -165,7 +165,7 @@ export const sendDailyNewsSummary = inngest.createFunction(
 export const runStockAnalysis = inngest.createFunction(
   { id: "run-stock-analysis", triggers: [{ event: "app/analysis.requested" }] },
   async ({ event, step }: any) => {
-    const { requestId, symbol, companyName } = event.data;
+    const { requestId, symbol, companyName, userEmail } = event.data;
 
     // 1. Fetch Data
     const { stockData, newsData } = await step.run("fetch-data", async () => {
