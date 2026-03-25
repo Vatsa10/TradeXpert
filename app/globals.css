@@ -130,6 +130,11 @@
   --color-red-500: #ff495b;
   --color-orange-500: #ff8243;
   --color-purple-500: #d13bff;
+  /* Custom Animations */
+  @keyframes loading {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
 }
 
 @layer base {

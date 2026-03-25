@@ -1,22 +1,29 @@
 import { inngest } from "./client";
-
 import {
   NEWS_SUMMARY_EMAIL_PROMPT,
   PERSONALIZED_WELCOME_EMAIL_PROMPT,
 } from "./prompts";
-
 import { sendNewsSummaryEmail, sendWelcomeEmail } from "../nodemailer/index";
-
 import { getFormattedTodayDate } from "../utils";
-
 import { getNews } from "../actions/finnhub.actions";
 import { getWatchlistSymbolsByEmail } from "../actions/watchlist.actions";
 import { getAllUsersForNewsEmail } from "../actions/user.actions";
+import { getStockPrice, getRecentNews } from "../analysis/tools";
+import { runQuantitativeAnalyst, runQualitativeAnalyst, runReportWriter } from "../analysis/agents";
+import { connectToDatabase } from "@/database/mongoose";
+import AnalysisRequest from "@/database/models/analysis.model";
+
+type UserForNewsEmail = {
+  id: string;
+  email: string;
+  name: string;
+};
+
+type MarketNewsArticle = any;
 
 export const sendSignUpEmail = inngest.createFunction(
-  { id: "sign-up-email" },
-  { event: "app/user.created" },
-  async ({ event, step }) => {
+  { id: "sign-up-email", triggers: [{ event: "app/user.created" }] },
+  async ({ event, step }: any) => {
     const userProfile = `
         - Country: ${event.data.country}
         - Investment goals: ${event.data.investmentGoals}
@@ -30,7 +37,7 @@ export const sendSignUpEmail = inngest.createFunction(
     );
 
     const response = await step.ai.infer("generate-welcome-intro", {
-      model: step.ai.models.gemini({ model: "gemini-2.5-flash-lite" }),
+      model: step.ai.models.gemini({ model: "gemini-2.0-flash" }),
       body: {
         contents: [
           {
@@ -62,10 +69,8 @@ export const sendSignUpEmail = inngest.createFunction(
 );
 
 export const sendDailyNewsSummary = inngest.createFunction(
-  { id: "daily-news-summary" },
-  [{ event: "app/send.daily.news" }, { cron: "0 12 * * *" }],
-  // [{ event: "app/send.daily.news" }, { cron: "* * * * *" }],
-  async ({ step }) => {
+  { id: "daily-news-summary", triggers: [{ event: "app/send.daily.news" }, { cron: "0 12 * * *" }] },
+  async ({ step }: any) => {
     // Step #1: Get all users for news delivery
     const users = await step.run("get-all-users", getAllUsersForNewsEmail);
     if (!users || users.length === 0)
@@ -111,7 +116,7 @@ export const sendDailyNewsSummary = inngest.createFunction(
         );
 
         const response = await step.ai.infer(`summarize-news-${user.email}`, {
-          model: step.ai.models.gemini({ model: "gemini-2.5-flash-lite" }),
+          model: step.ai.models.gemini({ model: "gemini-2.0-flash" }),
           body: {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
           },
@@ -147,5 +152,57 @@ export const sendDailyNewsSummary = inngest.createFunction(
       success: true,
       message: "Daily news summary emails sent successfully",
     };
+  }
+);
+
+/**
+ * 4-Step Multi-Agent Stock Analysis Workflow
+ * 1. Data Fetcher (Alpha Vantage + NewsAPI)
+ * 2. Quantitative Analyst
+ * 3. Qualitative Analyst
+ * 4. Report Writer
+ */
+export const runStockAnalysis = inngest.createFunction(
+  { id: "run-stock-analysis", triggers: [{ event: "app/analysis.requested" }] },
+  async ({ event, step }: any) => {
+    const { requestId, symbol, companyName } = event.data;
+
+    // 1. Fetch Data
+    const { stockData, newsData } = await step.run("fetch-data", async () => {
+      const stock = await getStockPrice(symbol);
+      const news = await getRecentNews(companyName);
+      return { stockData: stock, newsData: news };
+    });
+
+    // 2. Quantitative Analysis
+    const quantAnalysis = await step.run("quant-analysis", async () => {
+      return await runQuantitativeAnalyst(stockData);
+    });
+
+    // 3. Qualitative Analysis
+    const qualAnalysis = await step.run("qual-analysis", async () => {
+      return await runQualitativeAnalyst(newsData);
+    });
+
+    // 4. Final Report Generation
+    const finalReport = await step.run("generate-report", async () => {
+      return await runReportWriter(
+        companyName,
+        symbol,
+        quantAnalysis,
+        qualAnalysis
+      );
+    });
+
+    // 5. Update MongoDB with the result
+    await step.run("save-result", async () => {
+      await connectToDatabase();
+      await AnalysisRequest.findOneAndUpdate(
+        { requestId },
+        { status: "completed", report: finalReport, updatedAt: new Date() }
+      );
+    });
+
+    return { success: true, requestId };
   }
 );
