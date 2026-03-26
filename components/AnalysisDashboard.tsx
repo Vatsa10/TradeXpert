@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { startAnalysisAction, getAnalysisStatusAction } from "@/lib/actions/analysis.actions";
@@ -47,6 +47,7 @@ export default function AnalysisDashboard({
           if (res.status === "completed" && res.report) {
             setReport(res.report as StockAnalysisReport);
             setStatus("completed");
+            justSelected.current = true;
             setSymbol(res.symbol || "");
           } else {
             setRequestId(initialRequestId);
@@ -98,6 +99,11 @@ export default function AnalysisDashboard({
               setReport(resA.report as StockAnalysisReport);
               setStatus("completed");
               toast.success("Report generated!");
+              
+              // Update URL to reflect the new report
+              if (resA.request_id) {
+                router.push(`/analysis/${resA.request_id}`);
+              }
             }
 
             setLoading(false);
@@ -119,11 +125,15 @@ export default function AnalysisDashboard({
   const [suggestionsA, setSuggestionsA] = useState<any[]>([]);
   const [suggestionsB, setSuggestionsB] = useState<any[]>([]);
 
+  // Track if we just selected a symbol to prevent dropdown from reappearing immediately
+  const justSelected = useRef(false);
+
   // Fuzzy Search Effect for Symbol A
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (symbol.length < 2) {
+      if (symbol.length < 2 || justSelected.current) {
         setSuggestionsA([]);
+        if (justSelected.current) justSelected.current = false;
         return;
       }
       const results = await searchStocks(symbol);
@@ -137,8 +147,9 @@ export default function AnalysisDashboard({
   // Fuzzy Search Effect for Symbol B
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (symbolB.length < 2) {
+      if (symbolB.length < 2 || justSelected.current) {
         setSuggestionsB([]);
+        if (justSelected.current) justSelected.current = false;
         return;
       }
       const results = await searchStocks(symbolB);
@@ -236,11 +247,11 @@ export default function AnalysisDashboard({
               </div>
               {suggestionsA.length > 0 && (
                  <div className="absolute top-full left-0 right-0 mt-1 bg-[#0D0D0E] border border-white/[0.06] rounded-xl shadow-2xl z-50 overflow-hidden py-1">
-                    {suggestionsA.map((s) => (
+                    {suggestionsA.map((s, idx) => (
                        <button
-                          key={s.symbol}
+                          key={`${s.symbol}-${idx}`}
                           type="button"
-                          onClick={() => { setSymbol(s.symbol); setSuggestionsA([]); }}
+                          onClick={() => { justSelected.current = true; setSymbol(s.symbol); setSuggestionsA([]); }}
                           className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/[0.02] transition-colors group"
                        >
                           <div className="flex items-center gap-3">
@@ -273,11 +284,11 @@ export default function AnalysisDashboard({
                     </div>
                     {suggestionsB.length > 0 && (
                        <div className="absolute top-full left-0 right-0 mt-1 bg-[#0D0D0E] border border-white/[0.06] rounded-xl shadow-2xl z-50 overflow-hidden py-1">
-                          {suggestionsB.map((s) => (
+                          {suggestionsB.map((s, idx) => (
                              <button
-                                key={s.symbol}
+                                key={`${s.symbol}-${idx}`}
                                 type="button"
-                                onClick={() => { setSymbolB(s.symbol); setSuggestionsB([]); }}
+                                onClick={() => { justSelected.current = true; setSymbolB(s.symbol); setSuggestionsB([]); }}
                                 className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/[0.02] transition-colors group"
                              >
                                 <div className="flex items-center gap-3">
@@ -332,35 +343,57 @@ export default function AnalysisDashboard({
 
         {status === "completed" && report && (
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-1000">
-            {/* Live Technical Overlay */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="md:col-span-1 space-y-4">
-                  <div className="flex items-center gap-2 px-1">
-                      <Zap className="w-3 h-3 text-amber-500" />
-                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Market Pulse</span>
-                  </div>
-                  <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[200px]">
-                    <TradingViewWidget
-                        scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-symbol-info.js"
-                        config={SYMBOL_INFO_WIDGET_CONFIG(report.stock_symbol)}
-                        height={200}
-                      />
-                  </div>
-                </div>
-                <div className="md:col-span-3 space-y-4">
-                  <div className="flex items-center gap-2 px-1 justify-end">
-                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Technical Indicators</span>
-                  </div>
-                  <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl p-4 overflow-hidden shadow-sm h-[200px] flex items-center justify-center">
-                    <div className="w-full max-w-sm">
-                       <TradingViewWidget
-                          scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-technical-analysis.js"
-                          config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(report.stock_symbol)}
-                          height={160}
+            {/* Real-time Technical Visuals Overlay */}
+            <div className="space-y-6">
+              {/* Main Technical Chart - Full Width */}
+              <div className="bg-[#0A0A0B] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[450px]">
+                <TradingViewWidget
+                  scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-advanced-chart.js"
+                  config={{
+                    "width": "100%",
+                    "height": 450,
+                    "symbol": report.stock_symbol.includes(":") ? report.stock_symbol : `NASDAQ:${report.stock_symbol}`,
+                    "interval": "D",
+                    "timezone": "Etc/UTC",
+                    "theme": "dark",
+                    "style": "1",
+                    "locale": "en",
+                    "enable_publishing": false,
+                    "allow_symbol_change": true,
+                    "calendar": false,
+                    "support_host": "https://www.tradingview.com"
+                  }}
+                  height={450}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="md:col-span-1 space-y-4">
+                    <div className="flex items-center gap-2 px-1">
+                        <Zap className="w-3 h-3 text-amber-500" />
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Market Pulse</span>
+                    </div>
+                    <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[200px]">
+                      <TradingViewWidget
+                          scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-symbol-info.js"
+                          config={SYMBOL_INFO_WIDGET_CONFIG(report.stock_symbol)}
+                          height={200}
                         />
                     </div>
                   </div>
-                </div>
+                  <div className="md:col-span-3 space-y-4">
+                    <div className="flex items-center gap-2 px-1 justify-end">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Technical Indicators</span>
+                    </div>
+                    <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[200px]">
+                       <TradingViewWidget
+                          scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-technical-analysis.js"
+                          config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(report.stock_symbol)}
+                          height={200}
+                        />
+                    </div>
+                  </div>
+              </div>
             </div>
 
             {/* Report Header Section */}

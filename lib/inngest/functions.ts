@@ -167,46 +167,65 @@ export const runStockAnalysis = inngest.createFunction(
   async ({ event, step }: any) => {
     const { requestId, symbol, companyName, userEmail } = event.data;
 
-    // 1. Fetch Data (Rich Finnhub Context + Fallback tools)
-    const { stockData, newsData } = await step.run("fetch-data", async () => {
-      // Get the rich "TradingView-style" context from Finnhub
-      const richContext = await getAIAnalysisContext(symbol);
+    try {
+      // 1. Fetch Data (Rich Finnhub Context + Fallback tools)
+      const { stockData, newsData } = await step.run("fetch-data", async () => {
+        // Get the rich "TradingView-style" context from Finnhub
+        const richContext = await getAIAnalysisContext(symbol);
+        
+        // Fallback/Supplemental news if needed (optional, richContext already has some)
+        const news = await getRecentNews(companyName);
+        
+        return { stockData: richContext, newsData: news };
+      });
+
+      // 2. Quantitative Analysis
+      const quantAnalysis = await step.run("quant-analysis", async () => {
+        return await runQuantitativeAnalyst(stockData);
+      });
+
+      // 3. Qualitative Analysis
+      const qualAnalysis = await step.run("qual-analysis", async () => {
+        return await runQualitativeAnalyst(newsData);
+      });
+
+      // 4. Final Report Generation
+      const finalReport = await step.run("generate-report", async () => {
+        return await runReportWriter(
+          companyName,
+          symbol,
+          quantAnalysis,
+          qualAnalysis
+        );
+      });
+
+      // 5. Update MongoDB with the result
+      await step.run("save-result", async () => {
+        await connectToDatabase();
+        await AnalysisRequest.findOneAndUpdate(
+          { requestId },
+          { status: "completed", report: finalReport, updatedAt: new Date() }
+        );
+      });
+
+      return { success: true, requestId };
+    } catch (error: any) {
+      console.error("Inngest Analysis Error:", error);
       
-      // Fallback/Supplemental news if needed (optional, richContext already has some)
-      const news = await getRecentNews(companyName);
+      // Update MongoDB to reflect the error status
+      await step.run("mark-as-failed", async () => {
+        await connectToDatabase();
+        await AnalysisRequest.findOneAndUpdate(
+          { requestId },
+          { 
+            status: "error", 
+            error: error.message || "Unknown error during AI synthesis",
+            updatedAt: new Date() 
+          }
+        );
+      });
       
-      return { stockData: richContext, newsData: news };
-    });
-
-    // 2. Quantitative Analysis
-    const quantAnalysis = await step.run("quant-analysis", async () => {
-      return await runQuantitativeAnalyst(stockData);
-    });
-
-    // 3. Qualitative Analysis
-    const qualAnalysis = await step.run("qual-analysis", async () => {
-      return await runQualitativeAnalyst(newsData);
-    });
-
-    // 4. Final Report Generation
-    const finalReport = await step.run("generate-report", async () => {
-      return await runReportWriter(
-        companyName,
-        symbol,
-        quantAnalysis,
-        qualAnalysis
-      );
-    });
-
-    // 5. Update MongoDB with the result
-    await step.run("save-result", async () => {
-      await connectToDatabase();
-      await AnalysisRequest.findOneAndUpdate(
-        { requestId },
-        { status: "completed", report: finalReport, updatedAt: new Date() }
-      );
-    });
-
-    return { success: true, requestId };
+      throw error; // Re-throw for Inngest retry logic
+    }
   }
 );

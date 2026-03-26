@@ -20,7 +20,7 @@ export const sendWelcomeEmail = async ({
   );
 
   const mailOptions = {
-    from: `"TradXpert" <signalone@prabuddhaxdev.in>`,
+    from: `"TradXpert" <vatsajoshi2@gmail.com>`,
     to: email,
     subject: `Welcome to TradXpert - your stock market toolkit is ready!`,
     text: "Thanks for joining TradXpert",
@@ -46,7 +46,7 @@ export const sendNewsSummaryEmail = async ({
   ).replace("{{newsContent}}", newsContent);
 
   const mailOptions = {
-    from: `"TradXpert News" <signalone@prabuddhaxdev.in>`,
+    from: `"TradXpert News" <vatsajoshi2@gmail.com>`,
     to: email,
     subject: `📈 Market News Summary Today - ${date}`,
     text: `Today's market news summary from TradXpert`,

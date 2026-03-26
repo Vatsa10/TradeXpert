@@ -47,12 +47,18 @@ export async function startAnalysisAction(symbol: string, companyName: string) {
  * Get analysis status and result from MongoDB
  */
 export async function getAnalysisStatusAction(requestId: string) {
+  const session = await auth!.api.getSession({ headers: await headers() });
+  if (!session?.user) throw new Error("Unauthorized");
+
   await connectToDatabase();
   
-  const request = await AnalysisRequest.findOne({ requestId }).lean();
+  const request = await AnalysisRequest.findOne({ 
+    requestId,
+    userEmail: session.user.email 
+  }).lean();
   
   if (!request) {
-    throw new Error("Analysis request not found");
+    throw new Error("Analysis request not found or unauthorized");
   }
   
   return {

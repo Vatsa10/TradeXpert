@@ -1,20 +1,28 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AnalysisDashboard from "@/components/AnalysisDashboard";
 import AnalysisHistory from "@/components/AnalysisHistory";
-import { getAnalysisStatusAction } from "@/lib/actions/analysis.actions";
-import { InvestmentReport as StockAnalysisReport } from "@/lib/analysis/types";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
-export default function AnalysisPageClient() {
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+export default function AnalysisPageClient({ id }: { id?: string }) {
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(id || null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const router = useRouter();
+
+  // Update selectedRequestId when id prop changes (for routing)
+  useEffect(() => {
+    if (id) {
+      setSelectedRequestId(id);
+    }
+  }, [id]);
 
   const handleSelectHistory = async (id: string) => {
     setSelectedRequestId(id);
+    router.push(`/analysis/${id}`);
     toast.info("Loading analysis from history...");
   };
 
