@@ -1,5 +1,5 @@
 export const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
+  { href: "/dashboard", label: "Browse" },
   { href: "/search", label: "Search" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/analysis", label: "Analysis" },

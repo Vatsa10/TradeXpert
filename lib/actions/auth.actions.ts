@@ -14,7 +14,7 @@ export const signUpWithEmail = async ({
   preferredIndustry,
 }: SignUpFormData) => {
   try {
-    const response = await auth.api.signUpEmail({
+    const response = await auth!.api.signUpEmail({
       body: { email, password, name: fullName },
     });
 
@@ -41,18 +41,20 @@ export const signUpWithEmail = async ({
 
 export const signInWithEmail = async ({ email, password }: SignInFormData) => {
   try {
-    const response = await auth.api.signInEmail({ body: { email, password } });
+    const response = await auth!.api.signInEmail({ body: { email, password } });
 
     return { success: true, data: response };
-  } catch (e) {
+  } catch (e: any) {
     console.log("Sign in failed", e);
-    return { success: false, error: "Sign in failed" };
+    // Extract error message from better-auth error if available
+    const errorMessage = e.message || "Sign in failed";
+    return { success: false, error: errorMessage };
   }
 };
 
 export const signOut = async () => {
   try {
-    await auth.api.signOut({ headers: await headers() });
+    await auth!.api.signOut({ headers: await headers() });
   } catch (e) {
     console.log("Sign out failed", e);
     return { success: false, error: "Sign out failed" };

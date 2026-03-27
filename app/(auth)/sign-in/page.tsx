@@ -7,6 +7,8 @@ import FooterLink from "@/components/forms/FooterLink";
 import { signInWithEmail } from "@/lib/actions/auth.actions";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 const SignIn = () => {
   const router = useRouter();
@@ -25,17 +27,28 @@ const SignIn = () => {
   const onSubmit = async (data: SignInFormData) => {
     try {
       const result = await signInWithEmail(data);
-      if (result.success) router.push("/");
+      if (result.success) {
+        toast.success("Signed in successfully!");
+        router.push("/dashboard");
+      } else {
+        toast.error(result.error || "Sign in failed", {
+          description: result.error?.includes("find") || result.error?.includes("exist")
+            ? "Account not found. Please sign up."
+            : "Please check your credentials.",
+        });
+      }
     } catch (e) {
       console.error(e);
-      toast.error("Sign in failed", {
-        description: e instanceof Error ? e.message : "Failed to sign in.",
-      });
+      toast.error("An unexpected error occurred.");
     }
   };
 
   return (
     <>
+      <Link href="/" className="mb-8 flex w-fit items-center gap-2 text-gray-500 transition-colors hover:text-white group">
+        <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+        <span className="text-sm font-bold tracking-tight">TradXpert Home</span>
+      </Link>
       <h1 className="form-title">Welcome back</h1>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

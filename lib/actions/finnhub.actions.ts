@@ -118,14 +118,13 @@ export async function getNews(
 export const searchStocks = cache(
   async (query?: string): Promise<StockWithWatchlistStatus[]> => {
     try {
-          const session = await auth.api.getSession({
+          const session = await auth!.api.getSession({
             headers: await headers(),
           });
-          if (!session?.user) redirect("/sign-in");
 
-          const userWatchlistSymbols = await getWatchlistSymbolsByEmail(
-            session.user.email
-          );
+          const userWatchlistSymbols = session?.user 
+            ? await getWatchlistSymbolsByEmail(session.user.email)
+            : [];
       const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
       if (!token) {
         // If no token, log and return empty to avoid throwing per requirements

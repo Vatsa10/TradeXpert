@@ -137,6 +137,49 @@
     0% { transform: translateX(-100%); }
     100% { transform: translateX(400%); }
   }
+
+  @keyframes reveal {
+    from { transform: scale(0.9) translateY(40px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+}
+
+.scroll-reveal {
+  view-timeline-name: --reveal;
+  view-timeline-axis: block;
+  animation: linear reveal both;
+  animation-timeline: --reveal;
+  animation-range: entry 20% cover 40%;
+}
+
+/* Fallback for browsers with no support for CSS scroll timelines */
+@supports not (animation-timeline: scroll()) {
+  .scroll-reveal {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer utilities {
+  .animate-in {
+    animation-duration: 0.7s;
+    animation-fill-mode: forwards;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .fade-in {
+    animation-name: fadeIn;
+  }
+  .slide-in-from-bottom-5 {
+    animation-name: slideInFromBottom;
+  }
+  .slide-in-from-bottom-10 {
+    animation-name: slideInFromBottom;
+    animation-duration: 1s;
+  }
+  .delay-300 {
+    animation-delay: 300ms;
+  }
 }
 
 /* Custom Scrollbar - Thin, Blue Thumb on Black Track */
@@ -199,6 +242,14 @@
 
 /* Color hierarchy layers */
 @layer utilities {
+  .glassmorphism {
+    background: rgba(255, 255, 255, 0.01);
+    backdrop-filter: blur(40px) saturate(180%);
+  }
+  .glassmorphism-btn {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+  }
   .bg-root {
     @apply bg-[#0A0A0A];
   }
@@ -241,10 +292,14 @@ button:disabled {
     @apply w-full gap-8 grid-cols-1 md:grid-cols-2 xl:grid-cols-3;
   }
   .header {
-    @apply z-50 w-full h-[70px] bg-gray-800;
+    @apply z-50 sticky top-0 w-full h-[70px] bg-[#0A0A0A]/80 backdrop-blur-xl border-b border-white/5;
+  }
+  .header-pill {
+    @apply z-50 fixed top-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-7xl h-[64px] rounded-full border border-white/5 bg-[#0A0A0A]/60 backdrop-blur-2xl;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
   .header-wrapper {
-    @apply flex justify-between items-center px-6 py-4 text-gray-500;
+    @apply h-full container flex justify-between items-center px-6 text-gray-400 mx-auto;
   }
   .auth-layout {
     @apply flex flex-col justify-between lg:flex-row h-screen bg-gray-900 relative overflow-hidden;

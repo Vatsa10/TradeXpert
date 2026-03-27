@@ -8,11 +8,11 @@ import { getWatchlistWithData } from "@/lib/actions/getWatchlistWithData.actions
 
 
 export default async function WatchlistPage() {
-  const watchlsit = await getWatchlistWithData();
+  const watchlist = await getWatchlistWithData();
   const initialStocks = await searchStocks();
 
   // empty watchlist
-  if (watchlsit.length === 0) {
+  if (watchlist.length === 0) {
     return (
       <div className="watchlist-empty-wrapper">
         <div className="flex watchlist-empty-container">
@@ -42,7 +42,7 @@ export default async function WatchlistPage() {
           <SearchCommand initialStocks={initialStocks} />
         </div>
 
-        <WatchlistTable watchlist={watchlsit} />
+        <WatchlistTable watchlist={watchlist} />
       </div>
     </section>
   );

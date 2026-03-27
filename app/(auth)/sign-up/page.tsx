@@ -14,6 +14,8 @@ import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
 import { signUpWithEmail } from "@/lib/actions/auth.actions";
 import { toast } from "sonner";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 const SignUp = () => {
   const router = useRouter();
@@ -38,7 +40,12 @@ const SignUp = () => {
   const onSubmit = async (data: SignUpFormData) => {
     try {
       const result = await signUpWithEmail(data);
-      if (result.success) router.push("/");
+      if (result.success) {
+        toast.success("Account created successfully!");
+        router.push("/dashboard");
+      } else {
+        toast.error(result.error || "Sign up failed");
+      }
     } catch (e) {
       console.error(e);
       toast.error("Sign up failed", {
@@ -50,6 +57,10 @@ const SignUp = () => {
 
   return (
     <>
+      <Link href="/" className="mb-8 flex w-fit items-center gap-2 text-gray-500 transition-colors hover:text-white group">
+        <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+        <span className="text-sm font-bold tracking-tight">TradXpert Home</span>
+      </Link>
       <h1 className="form-title">Sign Up & Personalize</h1>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

@@ -4,11 +4,11 @@ import NavItems from "./NavItems";
 import UserDropdown from "./UserDropdown";
 import { searchStocks } from "@/lib/actions/finnhub.actions";
 
-export async function Header({ user }: { user: User }) {
+export async function Header({ user }: { user: User | null }) {
   const initialStocks = await searchStocks();
   return (
-    <div className="sticky top-0 header">
-      <div className="container header-wrapper">
+    <header className={user ? "header" : "header-pill"}>
+      <div className="header-wrapper">
         <Link href="/">
           <Image
             src="/logo.png"
@@ -20,14 +20,13 @@ export async function Header({ user }: { user: User }) {
         </Link>
 
         <nav className="hidden sm:block">
-          <NavItems initialStocks={initialStocks} />
+          <NavItems initialStocks={initialStocks} user={user} />
         </nav>
 
         <UserDropdown user={user} initialStocks={initialStocks} />
       </div>
-    </div>
+    </header>
   );
 };
-
 
 export default Header

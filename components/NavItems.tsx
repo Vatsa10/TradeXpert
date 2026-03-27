@@ -8,8 +8,10 @@ import SearchCommand from "./SearchCommand";
 
 const NavItems = ({
   initialStocks,
+  user,
 }: {
   initialStocks: StockWithWatchlistStatus[];
+  user: User | null;
 }) => {
   const pathname = usePathname();
 
@@ -19,9 +21,14 @@ const NavItems = ({
     return pathname.startsWith(path);
   }
 
+  // For guests on the landing page, we hide all nav items except the Logo and Sign In (handled in Header/UserDropdown)
+  if (!user) return null;
+
+  const visibleItems = NAV_ITEMS;
+
   return (
     <ul className="flex flex-col sm:flex-row p-2 gap-3 sm:gap-10 font-medium">
-      {NAV_ITEMS.map(({ href, label }) => {
+      {visibleItems.map(({ href, label }) => {
         if(href === '/search')
           return (
             <li key="search-trigger">
@@ -41,7 +48,7 @@ const NavItems = ({
                 isActive(href) ? "text-gray-100" : ""
               }`}
             >
-              {label}
+              {href === "/" && !user ? "Home" : label}
             </Link>
           </li>
         );
