@@ -99,9 +99,17 @@ export interface QueryContext {
   news?: NewsItem[];
   searchResults?: SearchResult[];
   sentiment?: SentimentResult | null;
+  technicalIndicators?: TechnicalIndicatorsData | null;
   portfolio?: WatchlistItem[];
   events?: string[];
   timestamp: Date;
+}
+
+export interface TechnicalIndicatorsData {
+  rsi?: { value: number; signal: string };
+  macd?: { histogram: number; signal: string };
+  adx?: { value: number; signal: string };
+  sma20?: number;
 }
 
 export interface WatchlistItem {

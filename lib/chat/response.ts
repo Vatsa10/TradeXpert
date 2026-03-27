@@ -68,6 +68,16 @@ ${context.metrics.debt_to_equity ? `- Debt/Equity: ${context.metrics.debt_to_equ
 `;
   }
 
+  if (context.technicalIndicators) {
+    prompt += `
+### TECHNICAL INDICATORS
+${context.technicalIndicators.rsi ? `- RSI: ${context.technicalIndicators.rsi.value?.toFixed(1)} (${context.technicalIndicators.rsi.signal})` : ""}
+${context.technicalIndicators.macd ? `- MACD: ${context.technicalIndicators.macd.signal} (histogram: ${context.technicalIndicators.macd.histogram?.toFixed(2)})` : ""}
+${context.technicalIndicators.adx ? `- ADX: ${context.technicalIndicators.adx.value?.toFixed(1)} (${context.technicalIndicators.adx.signal})` : ""}
+${context.technicalIndicators.sma20 ? `- SMA 20: $${context.technicalIndicators.sma20?.toFixed(2)}` : ""}
+`;
+  }
+
   if (context.news && context.news.length > 0) {
     prompt += `
 ### NEWS

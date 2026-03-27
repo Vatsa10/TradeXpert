@@ -3,6 +3,7 @@ import { extractEntity } from "./intent";
 import { getFinnhubQuote, getStockProfile, getStockMetrics, getCompanyNews, getGeneralNews } from "./aggregator";
 import { webSearch } from "./search";
 import { analyzeSentiment } from "./sentiment";
+import { getTechnicalIndicators } from "./indicators";
 
 const TIMEOUT_MS = 800;
 
@@ -158,6 +159,10 @@ export async function buildContext(
     tasks.push(webSearch(query, mode));
   }
 
+  if (mode === "pro") {
+    tasks.push(getTechnicalIndicators(entity.symbol));
+  }
+
   const results = await Promise.allSettled(tasks);
 
   context.priceData = results[0].status === "fulfilled" ? results[0].value as PriceData : null;
@@ -165,8 +170,27 @@ export async function buildContext(
   context.metrics = results[2].status === "fulfilled" ? results[2].value as FinancialMetrics : null;
   context.news = results[3].status === "fulfilled" ? results[3].value as NewsItem[] : [];
 
-  if (tasks.length > 4) {
+  const baseTaskCount = 4;
+  const hasSearch = shouldUseWebSearch(intent, mode, !!entity.symbol);
+  
+  if (hasSearch) {
     context.searchResults = results[4].status === "fulfilled" ? results[4].value as SearchResult[] : [];
+  }
+
+  const indicatorIndex = baseTaskCount + (hasSearch ? 1 : 0);
+  if (mode === "pro" && indicatorIndex < results.length) {
+    const indicatorsResult = results[indicatorIndex];
+    if (indicatorsResult.status === "fulfilled") {
+      const indicators = indicatorsResult.value;
+      if (indicators) {
+        context.technicalIndicators = {
+          rsi: indicators.rsi ? { value: indicators.rsi.value || null, signal: indicators.rsi.signal } : undefined,
+          macd: indicators.macd ? { histogram: (indicators.macd.value as number) || 0, signal: indicators.macd.signal } : undefined,
+          adx: indicators.adx ? { value: indicators.adx.value || null, signal: indicators.adx.signal } : undefined,
+          sma20: indicators.sma20?.value as number || undefined,
+        };
+      }
+    }
   }
 
   if (context.news && context.news.length > 0) {
