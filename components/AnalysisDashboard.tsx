@@ -200,144 +200,182 @@ export default function AnalysisDashboard({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
-      {/* Search Mode Toggle - Subtle */}
-      <div className="flex items-center justify-start border-b border-white/[0.04] p-1 gap-6">
+      {/* Search Mode Toggle - Improved with border-b-2 */}
+      <div className="flex items-center justify-start border-b border-[#27272A] gap-4">
         <button
           onClick={() => setMode("single")}
           className={cn(
-            "pb-3 text-xs font-semibold uppercase tracking-wider transition-all relative",
-            mode === "single" ? "text-white" : "text-gray-600 hover:text-gray-400"
+            "pb-3 text-sm font-medium uppercase tracking-wider transition-all relative",
+            mode === "single" ? "text-white" : "text-gray-500 hover:text-gray-300"
           )}
         >
           Single Analysis
-          {mode === "single" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 rounded-full" />}
+          {mode === "single" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full" />}
         </button>
         <button
           onClick={() => setMode("compare")}
           className={cn(
-            "pb-3 text-xs font-semibold uppercase tracking-wider transition-all relative",
-            mode === "compare" ? "text-white" : "text-gray-600 hover:text-gray-400"
+            "pb-3 text-sm font-medium uppercase tracking-wider transition-all relative",
+            mode === "compare" ? "text-white" : "text-gray-500 hover:text-gray-300"
           )}
         >
           Comparative
-          {mode === "compare" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 rounded-full" />}
+          {mode === "compare" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full" />}
         </button>
       </div>
 
-      {/* Search Tool */}
-      <div className="bg-[#0A0A0B] border border-white/[0.04] rounded-xl p-1.5 shadow-sm">
+      {/* Command Bar - Input Section */}
+      <div className="bg-[#1A1A1A] border border-[#27272A] rounded-xl p-2">
         <form
           onSubmit={handleStartAnalysis}
           className="flex flex-col md:flex-row items-center gap-2"
         >
           <div className="flex-1 flex flex-col md:flex-row items-center gap-2 w-full">
-            {/* Input A */}
+            {/* Input A - Command bar style */}
             <div className="flex-1 relative w-full">
-              <div className="flex items-center px-4 gap-3 bg-white/[0.01] border border-white/[0.02] rounded-lg w-full">
-                <Search className="w-4 h-4 text-gray-700" />
+              <div className="flex items-center px-4 gap-3 bg-[#111111] border border-[#27272A] rounded-lg w-full focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/20 transition-all">
+                <Search className="w-4 h-4 text-gray-500" />
                 <input
                   type="text"
-                  placeholder={mode === "single" ? "Enter ticker (e.g. AAPL)" : "Ticker 1"}
+                  placeholder={mode === "single" ? "Enter ticker (AAPL, TSLA, NVDA...)" : "Ticker 1"}
                   value={symbol}
                   onChange={(e) => setSymbol(e.target.value)}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder:text-gray-700 font-medium py-3 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && symbol) {
+                      e.preventDefault();
+                      handleStartAnalysis(e as any);
+                    }
+                  }}
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder:text-zinc-500 font-medium py-3 text-sm"
                   disabled={loading}
                   required
                 />
               </div>
+              {/* Auto-complete dropdown */}
               {suggestionsA.length > 0 && (
-                 <div className="absolute top-full left-0 right-0 mt-1 bg-[#0D0D0E] border border-white/[0.06] rounded-xl shadow-2xl z-50 overflow-hidden py-1">
+                 <div className="absolute top-full left-0 right-0 mt-1 bg-[#1A1A1A] border border-[#27272A] rounded-xl shadow-2xl z-50 overflow-hidden py-1 max-h-[300px] overflow-y-auto custom-scrollbar">
                     {suggestionsA.map((s, idx) => (
                        <button
                           key={`${s.symbol}-${idx}`}
                           type="button"
                           onClick={() => { justSelected.current = true; setSymbol(s.symbol); setSuggestionsA([]); }}
-                          className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/[0.02] transition-colors group"
+                          className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-blue-500/10 transition-colors group"
                        >
                           <div className="flex items-center gap-3">
-                             <span className="text-xs font-bold text-white tracking-widest">{s.symbol}</span>
-                             <span className="text-[10px] text-gray-600 font-medium truncate max-w-[150px] uppercase">{s.name}</span>
+                             <span className="text-sm font-bold text-blue-400 tracking-widest">{s.symbol}</span>
+                             <span className="text-xs text-gray-400 font-medium truncate max-w-[150px]">{s.name}</span>
                           </div>
-                          <ChevronRight className="w-3 h-3 text-gray-800 group-hover:text-gray-500" />
+                          <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-blue-400" />
                        </button>
                     ))}
                  </div>
-              )}
+               )}
             </div>
 
             {mode === "compare" && (
               <>
-                 <div className="px-1 text-[10px] text-gray-700 font-bold uppercase tracking-tighter">vs</div>
+                 <div className="px-1 text-xs text-gray-500 font-bold uppercase tracking-tighter">vs</div>
                  {/* Input B */}
                  <div className="flex-1 relative w-full">
-                    <div className="flex items-center px-4 gap-3 bg-white/[0.01] border border-white/[0.02] rounded-lg w-full">
-                      <Search className="w-4 h-4 text-gray-700" />
+                    <div className="flex items-center px-4 gap-3 bg-[#111111] border border-[#27272A] rounded-lg w-full focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/20 transition-all">
+                      <Search className="w-4 h-4 text-gray-500" />
                       <input
                         type="text"
                         placeholder="Ticker 2"
                         value={symbolB}
                         onChange={(e) => setSymbolB(e.target.value)}
-                        className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder:text-gray-700 font-medium py-3 text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && symbolB) {
+                            e.preventDefault();
+                            handleStartAnalysis(e as any);
+                          }
+                        }}
+                        className="flex-1 bg-transparent border-none focus:ring-0 text-white placeholder:text-zinc-500 font-medium py-3 text-sm"
                         disabled={loading}
                         required
                       />
                     </div>
                     {suggestionsB.length > 0 && (
-                       <div className="absolute top-full left-0 right-0 mt-1 bg-[#0D0D0E] border border-white/[0.06] rounded-xl shadow-2xl z-50 overflow-hidden py-1">
+                       <div className="absolute top-full left-0 right-0 mt-1 bg-[#1A1A1A] border border-[#27272A] rounded-xl shadow-2xl z-50 overflow-hidden py-1 max-h-[300px] overflow-y-auto custom-scrollbar">
                           {suggestionsB.map((s, idx) => (
                              <button
                                 key={`${s.symbol}-${idx}`}
                                 type="button"
                                 onClick={() => { justSelected.current = true; setSymbolB(s.symbol); setSuggestionsB([]); }}
-                                className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/[0.02] transition-colors group"
+                                className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-blue-500/10 transition-colors group"
                              >
                                 <div className="flex items-center gap-3">
-                                   <span className="text-xs font-bold text-white tracking-widest">{s.symbol}</span>
-                                   <span className="text-[10px] text-gray-600 font-medium truncate max-w-[150px] uppercase">{s.name}</span>
+                                   <span className="text-sm font-bold text-blue-400 tracking-widest">{s.symbol}</span>
+                                   <span className="text-xs text-gray-400 font-medium truncate max-w-[150px]">{s.name}</span>
                                 </div>
-                                <ChevronRight className="w-3 h-3 text-gray-800 group-hover:text-gray-500" />
+                                <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-blue-400" />
                              </button>
                           ))}
                        </div>
                     )}
                  </div>
-              </>
-            )}
+               </>
+             )}
           </div>
 
+          {/* CTA Button - Prominent */}
           <Button
             type="submit"
             disabled={loading || !symbol || (mode === "compare" && !symbolB)}
-            className="bg-white text-black hover:bg-white/90 font-bold py-3 px-8 rounded-lg shadow-xl active:scale-95 disabled:opacity-50 w-full md:w-auto text-xs"
+            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg disabled:opacity-50 w-full md:w-auto text-sm transition-all"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Request Analysis"}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Analyze"}
           </Button>
         </form>
+        
+        {/* Quick ticker suggestions */}
+        {!loading && status === "idle" && (
+          <div className="flex gap-2 mt-3 px-2">
+            <span className="text-xs text-zinc-600 self-center">Popular:</span>
+            {["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL"].map((ticker) => (
+              <button
+                key={ticker}
+                onClick={() => {
+                  setSymbol(ticker);
+                  justSelected.current = true;
+                }}
+                className="text-xs bg-[#27272A] hover:bg-[#3A3A3A] text-gray-400 hover:text-white px-2.5 py-1 rounded-md transition-colors"
+              >
+                {ticker}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Analysis Container - Refined Document Style */}
+      {/* Analysis Container */}
       <div className="min-h-[400px]">
         {status === "processing" && (
           <div className="flex flex-col items-center justify-center py-32 space-y-6">
             <div className="relative flex items-center justify-center">
-              <div className="absolute w-12 h-12 border border-indigo-500/20 rounded-full animate-ping" />
-              <Loader2 className="w-8 h-8 text-indigo-500/40 animate-spin" />
+              <div className="absolute w-12 h-12 border border-blue-500/20 rounded-full animate-ping" />
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
             </div>
             <div className="text-center space-y-2">
-              <h2 className="text-sm font-semibold text-white uppercase tracking-widest leading-none">Agents Synchronizing Intelligence</h2>
-              <p className="text-xs text-gray-600 max-w-xs mx-auto">Cross-referencing technical data points and market sentiment for {symbol.toUpperCase()}.</p>
+              <h2 className="text-base font-semibold text-white tracking-wide">Running Multi-Agent Analysis</h2>
+              <p className="text-sm text-gray-400 max-w-md mx-auto">Analyzing {symbol.toUpperCase() || symbolB.toUpperCase()} through our AI agents...</p>
             </div>
           </div>
         )}
 
         {status === "error" && (
-          <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center border border-rose-500/5 rounded-2xl bg-rose-500/[0.01]">
-            <AlertCircle className="w-8 h-8 text-rose-500/40" />
-            <div className="space-y-1">
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">Analysis Interrupted</h2>
-              <p className="text-xs text-gray-500 max-w-xs">{error || "Data service unavailable for this symbol."}</p>
+          <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center border border-red-500/20 rounded-2xl bg-red-500/[0.02]">
+            <AlertCircle className="w-10 h-10 text-red-500" />
+            <div className="space-y-2">
+              <h2 className="text-base font-bold text-white">Analysis Failed</h2>
+              <p className="text-sm text-gray-400 max-w-xs">{error || "Data service unavailable for this symbol."}</p>
             </div>
-            <Button variant="ghost" onClick={() => setStatus("idle")} className="text-[10px] uppercase font-black text-gray-500 hover:text-white mt-2">Dismiss</Button>
+            <Button 
+              onClick={() => setStatus("idle")} 
+              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Try Again
+            </Button>
           </div>
         )}
 
@@ -346,7 +384,7 @@ export default function AnalysisDashboard({
             {/* Real-time Technical Visuals Overlay */}
             <div className="space-y-6">
               {/* Main Technical Chart - Full Width */}
-              <div className="bg-[#0A0A0B] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[450px]">
+              <div className="bg-[#111111] border border-[#27272A] rounded-2xl overflow-hidden shadow-sm h-[450px]">
                 <TradingViewWidget
                   scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-advanced-chart.js"
                   config={{
@@ -371,9 +409,9 @@ export default function AnalysisDashboard({
                   <div className="md:col-span-1 space-y-4">
                     <div className="flex items-center gap-2 px-1">
                         <Zap className="w-3 h-3 text-amber-500" />
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Market Pulse</span>
+                        <span className="text-xs font-medium text-gray-400 uppercase tracking-widest leading-none">Market Pulse</span>
                     </div>
-                    <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[200px]">
+                    <div className="bg-[#111111] border border-[#27272A] rounded-2xl overflow-hidden shadow-sm h-[200px]">
                       <TradingViewWidget
                           scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-symbol-info.js"
                           config={SYMBOL_INFO_WIDGET_CONFIG(report.stock_symbol)}
@@ -383,9 +421,9 @@ export default function AnalysisDashboard({
                   </div>
                   <div className="md:col-span-3 space-y-4">
                     <div className="flex items-center gap-2 px-1 justify-end">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Technical Indicators</span>
+                        <span className="text-xs font-medium text-gray-400 uppercase tracking-widest leading-none">Technical Indicators</span>
                     </div>
-                    <div className="bg-[#0D0D0E] border border-white/[0.04] rounded-2xl overflow-hidden shadow-sm h-[200px]">
+                    <div className="bg-[#111111] border border-[#27272A] rounded-2xl overflow-hidden shadow-sm h-[200px]">
                        <TradingViewWidget
                           scriptUrl="https://www.tradingview.com/external-embedding/embed-widget-technical-analysis.js"
                           config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(report.stock_symbol)}
@@ -397,32 +435,32 @@ export default function AnalysisDashboard({
             </div>
 
             {/* Report Header Section */}
-            <div className="flex flex-col md:flex-row gap-10 items-start justify-between border-b border-white/[0.04] pb-10">
+            <div className="flex flex-col md:flex-row gap-10 items-start justify-between border-b border-[#27272A] pb-8">
               <div className="space-y-4 max-w-2xl">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest leading-none">Investment Memo</span>
-                  <div className="w-1 h-1 bg-gray-800 rounded-full" />
-                  <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest leading-none">{report.report_date}</span>
+                  <span className="text-xs text-gray-500 font-medium uppercase tracking-widest leading-none">Investment Memo</span>
+                  <div className="w-1 h-1 bg-[#27272A] rounded-full" />
+                  <span className="text-xs text-gray-500 font-medium uppercase tracking-widest leading-none">{report.report_date}</span>
                 </div>
                 <h2 className="text-4xl font-semibold text-white tracking-tight leading-none">
-                  {report.company_name} <span className="text-gray-700 font-normal">/</span> <span className="text-gray-500 font-medium">{report.stock_symbol}</span>
+                  {report.company_name} <span className="text-gray-600 font-normal">/</span> <span className="text-gray-500 font-medium">{report.stock_symbol}</span>
                 </h2>
-                <p className="text-sm text-gray-400 leading-relaxed max-w-xl">
+                <p className="text-sm text-gray-300 leading-relaxed max-w-xl">
                   {report.executive_summary}
                 </p>
               </div>
 
               <div className={cn(
                 "p-6 rounded-2xl border flex flex-col items-center justify-center min-w-[200px] shadow-sm",
-                report.investment_recommendation.includes("Buy") ? "bg-emerald-500/[0.02] border-emerald-500/10" :
-                  report.investment_recommendation.includes("Sell") ? "bg-rose-500/[0.02] border-rose-500/10" :
-                    "bg-amber-500/[0.02] border-amber-500/10"
+                report.investment_recommendation.includes("Buy") ? "bg-emerald-500/[0.03] border-emerald-500/30" :
+                  report.investment_recommendation.includes("Sell") ? "bg-red-500/[0.03] border-red-500/30" :
+                    "bg-amber-500/[0.03] border-amber-500/30"
               )}>
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-600 mb-2">Verdict</span>
+                <span className="text-xs font-medium uppercase tracking-[0.2em] text-gray-500 mb-2">Verdict</span>
                 <h3 className={cn(
                   "text-2xl font-bold tracking-tight mb-2",
                   report.investment_recommendation.includes("Buy") ? "text-emerald-400" :
-                    report.investment_recommendation.includes("Sell") ? "text-rose-400" :
+                    report.investment_recommendation.includes("Sell") ? "text-red-400" :
                       "text-amber-400"
                 )}>
                   {report.investment_recommendation}
@@ -431,10 +469,10 @@ export default function AnalysisDashboard({
                   {[1, 2, 3, 4, 5].map((s) => (
                     <div key={s} className={cn(
                       "w-1 h-3 rounded-full",
-                      (report.confidence_level / 20) >= s ? "bg-indigo-500/60" : "bg-white/5"
+                      (report.confidence_level / 20) >= s ? "bg-blue-500" : "bg-[#27272A]"
                     )} />
                   ))}
-                  <span className="text-[9px] font-bold text-gray-700 uppercase tracking-tighter ml-1">{report.confidence_level}% Confidence</span>
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-tighter ml-1">{report.confidence_level}% Confidence</span>
                 </div>
               </div>
             </div>
@@ -443,62 +481,86 @@ export default function AnalysisDashboard({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
               <div className="lg:col-span-8 space-y-12">
                 <section className="space-y-4">
-                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 flex items-center gap-3">
-                    <span className="w-4 h-[1px] bg-gray-800" /> Quantitative Research
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 flex items-center gap-3">
+                    <span className="w-4 h-[1px] bg-[#27272A]" /> Quantitative Research
                   </h4>
-                  <p className="text-sm text-gray-400 leading-relaxed font-normal whitespace-pre-wrap">{report.quantitative_summary}</p>
+                  <p className="text-sm text-gray-300 leading-relaxed font-normal whitespace-pre-wrap">{report.quantitative_summary}</p>
                 </section>
 
                 <section className="space-y-4">
-                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 flex items-center gap-3">
-                    <span className="w-4 h-[1px] bg-gray-800" /> Qualitative Analysis
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 flex items-center gap-3">
+                    <span className="w-4 h-[1px] bg-[#27272A]" /> Qualitative Analysis
                   </h4>
-                  <p className="text-sm text-gray-400 leading-relaxed font-normal whitespace-pre-wrap">{report.qualitative_summary}</p>
+                  <p className="text-sm text-gray-300 leading-relaxed font-normal whitespace-pre-wrap">{report.qualitative_summary}</p>
                 </section>
               </div>
 
-              <div className="lg:col-span-4 space-y-8">
-                <div className="bg-[#0D0D0E] border border-white/[0.03] rounded-xl p-6 space-y-4">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400/80">Key Rationale</h4>
-                  <p className="text-xs text-gray-500 leading-relaxed">
+              <div className="lg:col-span-4 space-y-6">
+                <div className="bg-[#111111] border border-[#27272A] rounded-xl p-5 space-y-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-widest text-blue-400">Key Rationale</h4>
+                  <p className="text-sm text-gray-400 leading-relaxed">
                     {report.recommendation_rationale}
                   </p>
                 </div>
 
-                <div className="bg-rose-500/[0.01] border border-rose-500/[0.04] rounded-xl p-6 space-y-4">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-rose-500/60">Risk Profile</h4>
-                  <p className="text-xs text-gray-500 leading-relaxed">
+                <div className="bg-red-500/[0.03] border border-red-500/20 rounded-xl p-5 space-y-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-widest text-red-400">Risk Profile</h4>
+                  <p className="text-sm text-gray-400 leading-relaxed">
                     {report.risk_assessment}
                   </p>
-                  <div className="pt-3 border-t border-rose-500/[0.04]">
-                    <div className="flex justify-between items-center text-[10px] font-bold text-gray-700">
+                  <div className="pt-3 border-t border-red-500/20">
+                    <div className="flex justify-between items-center text-xs font-medium text-gray-500">
                       <span>MT-SCORE</span>
-                      <span className="text-rose-500/40 uppercase">Elevated</span>
+                      <span className="text-red-400">Elevated</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-6 bg-[#0A0A0B] border border-white/[0.02] rounded-xl space-y-3">
-                  <div className="w-6 h-6 bg-white/[0.02] rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-3 h-3 text-gray-700" />
+                <div className="p-5 bg-[#111111] border border-[#27272A] rounded-xl space-y-3">
+                  <div className="w-8 h-8 bg-[#1A1A1A] rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4 text-blue-500" />
                   </div>
                   <h4 className="font-semibold text-sm text-white">Horizon</h4>
-                  <p className="text-xs text-gray-500 leading-relaxed">Strategic window set for <span className="text-white font-medium">{report.analysis_period}</span> based on multi-agent synthesis.</p>
+                  <p className="text-sm text-gray-400 leading-relaxed">Strategic window set for <span className="text-white font-medium">{report.analysis_period}</span> based on multi-agent synthesis.</p>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Empty State - Minimalist */}
+        {/* Empty State - Guided with quick actions */}
         {status === "idle" && (
-          <div className="flex flex-col items-center justify-center py-40 animate-in fade-in duration-1000">
-            <div className="w-12 h-12 bg-white/[0.01] border border-white/[0.03] rounded-2xl flex items-center justify-center mb-6">
-              <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
-            </div>
-            <div className="text-center space-y-1">
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em]">Engine Standby</p>
-              <p className="text-[10px] text-gray-700 uppercase font-bold tracking-wider">Awaiting equity ticker entry for analysis</p>
+          <div className="flex flex-col items-center justify-center py-32 animate-in fade-in duration-500">
+            <div className="text-center space-y-4 max-w-md">
+              <div className="w-16 h-16 bg-[#111111] border border-[#27272A] rounded-2xl flex items-center justify-center mx-auto">
+                <BarChart3 className="w-8 h-8 text-blue-500/60" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold text-white">Start an Analysis</h2>
+                <p className="text-sm text-gray-500">
+                  Enter a stock ticker above to generate AI-powered investment insights
+                </p>
+              </div>
+              
+              {/* Quick action buttons */}
+              <div className="flex flex-wrap justify-center gap-2 mt-4">
+                {["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "AMZN"].map((ticker) => (
+                  <button
+                    key={ticker}
+                    onClick={() => {
+                      setSymbol(ticker);
+                      justSelected.current = true;
+                    }}
+                    className="bg-[#1A1A1A] hover:bg-[#27272A] border border-[#27272A] hover:border-blue-500/30 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                  >
+                    {ticker}
+                  </button>
+                ))}
+              </div>
+              
+              <p className="text-xs text-gray-600 mt-4">
+                Or type any ticker symbol to analyze
+              </p>
             </div>
           </div>
         )}
