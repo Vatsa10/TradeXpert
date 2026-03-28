@@ -1,7 +1,7 @@
 const requestQueue: Array<{
-  resolve: (value: any) => void;
-  reject: (error: any) => void;
-  timestamp: number;
+  operation: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (error: unknown) => void;
 }> = [];
 
 let isProcessing = false;
@@ -52,7 +52,10 @@ async function processQueue(): Promise<void> {
     lastRequestTime = Date.now();
     
     try {
-      nextRequest.resolve(undefined);
+      const result = await nextRequest.operation();
+      nextRequest.resolve(result);
+    } catch (error) {
+      nextRequest.reject(error);
     } finally {
       concurrentRequests--;
     }
@@ -73,20 +76,20 @@ export async function withRateLimit<T>(
 
   return new Promise<T>((resolve, reject) => {
     requestQueue.push({
-      resolve: async () => {
+      operation: async () => {
         try {
           const result = await operation();
-          resolve(result);
+          return result;
         } catch (error: any) {
           if (cooldownOnError && error?.status === 429) {
             console.warn(`[RateLimiter] 429 received, setting cooldown for ${key}`);
             setCooldown(key, 60000);
           }
-          reject(error);
+          throw error;
         }
       },
+      resolve: (value) => resolve(value as T),
       reject,
-      timestamp: Date.now(),
     });
     
     processQueue();

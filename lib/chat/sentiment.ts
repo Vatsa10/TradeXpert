@@ -9,7 +9,8 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0.2,
 }) as any;
 
-const SENTIMENT_TIMEOUT_MS = 2500;
+const SENTIMENT_TIMEOUT_MS = 8000;
+const MAX_HEADLINES_FOR_SENTIMENT = 10;
 
 export interface SentimentResult {
   overallSentiment: "bullish" | "bearish" | "neutral";
@@ -55,12 +56,15 @@ export function extractMacroSignals(headlines: string[]): string[] {
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error("Sentiment timeout")), timeoutMs);
-    }),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Sentiment timeout")), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 function buildRuleBasedSentiment(headlines: string[], signals: string[]): SentimentResult {
@@ -98,13 +102,17 @@ export async function analyzeSentiment(
     };
   }
 
-  const ruleBasedSignals = extractMacroSignals(headlines);
-  const ruleBasedSentiment = buildRuleBasedSentiment(headlines, ruleBasedSignals);
+  const trimmedHeadlines = headlines
+    .filter((h) => typeof h === "string" && h.trim().length > 0)
+    .slice(0, MAX_HEADLINES_FOR_SENTIMENT);
 
-  const prompt = `Analyze the sentiment of these financial news headlines. Provide a sentiment score from -1 (very bearish) to 1 (very bullish).
+  const ruleBasedSignals = extractMacroSignals(trimmedHeadlines);
+  const ruleBasedSentiment = buildRuleBasedSentiment(trimmedHeadlines, ruleBasedSignals);
+
+  const prompt = `Analyze sentiment of these financial headlines.
 
 Headlines:
-${headlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}
+${trimmedHeadlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}
 
 Return a JSON object with:
 {
@@ -130,10 +138,15 @@ Return a JSON object with:
       macroSignals: Array.isArray(parsed.signals)
         ? Array.from(new Set([...(parsed.signals as string[]), ...ruleBasedSignals]))
         : ruleBasedSignals,
-      keyHeadlines: headlines.slice(0, 3),
+      keyHeadlines: trimmedHeadlines.slice(0, 3),
     };
   } catch (error) {
-    console.error("Sentiment analysis error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Sentiment timeout")) {
+      console.warn("[Sentiment] Timeout, using rule-based fallback");
+    } else {
+      console.error("Sentiment analysis error:", error);
+    }
     return ruleBasedSentiment;
   }
 }

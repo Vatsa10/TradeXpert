@@ -1,36 +1,103 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TradeXpert: Enterprise-Grade AI Stock Analysis Engine
 
-## Getting Started
+TradeXpert is a specialized analytical platform built on a distributed, event-driven architecture. It leverages a multi-agent orchestration layer to perform deep fundamental and qualitative analysis of global equities.
 
-First, run the development server:
+## System Architecture
 
+The application employs a decoupled architecture comprising the following components:
+
+- **Orchestration Layer**: Inngest is utilized as a durable execution engine for long-running workflows, managing event-driven function triggers and ensuring transactional consistency across distributed steps.
+- **AI Synthesis Tier**: A four-agent multi-agent system (MAS) utilizing Google Gemini (Flash 2.0 and 1.5 Pro) for technical parsing, sentiment derivation, and report generation.
+- **Data Persistence Layer**: MongoDB Atlas provides the operational data store for analysis requests, report archival, and historical session state.
+- **Authentication Infrastructure**: Powered by Better Auth, implementing secure session management and role-based access control.
+- **Front-end / Edge Layer**: Next.js 15+ (App Router) serves as the presentation and Server-Side Rendering (SSR) engine, with React Server Components (RSC) and Server Actions for low-latency backend interactions.
+
+---
+
+## Technical Stack
+
+- **Core Framework**: Next.js 15+ (TypeScript)
+- **Runtime Environment**: Bun 1.1+
+- **Background Job Orchestration**: Inngest (Durable Execution)
+- **AI Infrastructure**: Google Generative AI (Gemini SDK)
+- **Database Engine**: MongoDB (Mongoose ODM)
+- **External Data Ingestion**: Finnhub API, Alpha Vantage API, NewsAPI
+
+---
+
+## Local Development Lifecycle
+
+### 1. Dependency Acquisition
+Ensure your environment is configured for Bun. Execute the following to hydrate the dependency graph:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+bun install
+```
+
+### 2. Environment Configuration
+Populate the `.env` file with the following interface. Note that the system behavior varies based on the `INNGEST_DEV` and `NODE_ENV` flags:
+
+```env
+# Financial Data Connectors
+ALPHA_VANTAGE_API_KEY=<string>
+FINNHUB_API_KEY=<string>
+NEXT_PUBLIC_FINNHUB_API_KEY=<string>
+
+# Persistence & Identity
+MONGODB_URI=<mongodb_uri>
+BETTER_AUTH_SECRET=<ba_secret>
+BETTER_AUTH_URL=http://localhost:3000
+
+# LLM Configuration
+GEMINI_API_KEY=<gemini_api_key>
+
+# Inngest Local Cluster
+INNGEST_EVENT_KEY=local
+INNGEST_DEV=1
+# INNGEST_SIGNING_KEY is omitted for local signature bypass
+```
+
+### 3. Execution (Twin-Process Model)
+
+Local development requires simultaneous execution of the application server and the orchestration daemon:
+
+#### Primary: Next.js Development Server
+```bash
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+#### Secondary: Inngest RPC Daemon
+The daemon provides the local execution environment for the Inngest SDK and handles autodiscovery of served functions.
+```bash
+npx inngest-cli@latest dev
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The orchestration monitoring dashboard is accessible at `http://localhost:8288`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Production Deployment (Vercel Integration)
 
-To learn more about Next.js, take a look at the following resources:
+The production environment operates in "Cloud Mode," requiring rigorous request validation.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Required Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Parameter | Identifier | Note |
+| :--- | :--- | :--- |
+| **Inngest Signing Key** | `INNGEST_SIGNING_KEY` | Provides cryptographic verification of SDK requests. |
+| **Inngest Event Key** | `INNGEST_EVENT_KEY` | Authenticates outgoing event ingestion to Inngest Cloud. |
+| **Generative AI Key** | `GEMINI_API_KEY` | Required for inference steps within durable functions. |
+| **Persistence URI** | `MONGODB_URI` | Production Atlas connection string. |
 
-## Deploy on Vercel
+### Post-Deployment Synchronization
+1. After initializing the Vercel deployment, propagate the application schema to Inngest Cloud by syncing the endpoint: `https://<domain>/api/inngest`.
+2. Ensure `INNGEST_DEV` is **not** present in the production context to prevent unauthorized local bypass attempts.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Autonomous Agent Implementation
+The `runStockAnalysis` workflow implements a linear processing pipeline with automatic retries and error handling:
+
+1. **Ingestion Agent**: Aggregates structured financial metrics and unstructured news corpora.
+2. **Quantitative Analyst**: Deterministic processing of technical indicators and financial ratios.
+3. **Qualitative Analyst**: Neural sentiment analysis and narrative extraction from news datasets.
+4. **Report Synthesizer**: Final LLM-driven aggregation of technical and qualitative findings into a Markdown-formatted report.

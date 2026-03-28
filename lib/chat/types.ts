@@ -130,6 +130,7 @@ export interface LLMResponse {
   trend: Trend;
   reasoning: string[];
   advice: Advice;
+  recommendation?: string;
   confidence: number;
   dataQuality: DataQuality;
   sources: Source[];

@@ -1,45 +1,51 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { z } from "zod";
-import { Mode, LLMResponse, QueryContext, Trend, Advice, DataQuality, Source, SignalBundle } from "./types";
+import { Advice, LLMResponse, Mode, QueryContext, SignalBundle, Source, Trend } from "./types";
 import { assessDataQuality } from "./context-builder";
 import { calibrateConfidence, getDataQuality } from "./confidence";
-import { withRateLimit, setCooldown } from "./rate-limiter";
+import { setCooldown, withRateLimit } from "./rate-limiter";
 
 const fastLLM = new ChatGoogleGenerativeAI({
   model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   maxOutputTokens: 1024,
-  temperature: 0.3,
+  temperature: 0.25,
 }) as any;
 
-const proLLM = new ChatGoogleGenerativeAI({
-  model: "gemini-3.1-flash-preview",
+const proFlashLLM = new ChatGoogleGenerativeAI({
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  maxOutputTokens: 2048,
-  temperature: 0.3,
+  maxOutputTokens: 1400,
+  temperature: 0.2,
 }) as any;
+
+const proReasoningLLM = new ChatGoogleGenerativeAI({
+  model: "gemini-3.1-pro-preview",
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
+  maxOutputTokens: 2200,
+  temperature: 0.15,
+}) as any;
+
+const PRO_DEADLINE_MS = 15000;
 
 const OUTPUT_SCHEMA = `
-Response MUST be valid JSON with this exact structure:
+Return ONLY valid JSON with this exact structure:
 {
-  "summary": "2-3 sentence investment summary",
+  "summary": "2-3 sentence conclusion",
   "trend": "bullish" | "bearish" | "neutral",
-  "reasoning": ["point 1", "point 2", "point 3"],
+  "reasoning": ["point with numbers", "point with numbers", "point with numbers"],
   "advice": "Buy" | "Hold" | "Sell" | "Wait",
+  "recommendation": "explicit winner or no clear winner",
   "confidence": 0.0-1.0,
   "signalTrace": ["signal 1", "signal 2"]
 }
 
-CRITICAL RULES:
-- Only use provided data
-- Do not fabricate numbers or events
-- If data missing, say "Insufficient data" in summary
-- For comparison queries, explicitly compare both assets using available numeric fields
-- Mention data gaps per asset instead of generic "missing data"
-- Include at least one past-vs-current comparison (1D move, 52-week range position, or YoY growth)
-- confidence must be 0.0-1.0 (float)
-- trend must be exactly "bullish", "bearish", or "neutral"
-- advice must be exactly "Buy", "Hold", "Sell", or "Wait"
+Strict rules:
+- Use only provided context data
+- Do not fabricate events or numbers
+- Every reasoning point must include at least one numeric value
+- For comparison queries, choose one option if confidence > 0.5, otherwise clearly say no clear winner
+- Keep reasoning concrete, avoid generic lines
 `;
 
 const llmOutputSchema = z.object({
@@ -47,270 +53,55 @@ const llmOutputSchema = z.object({
   trend: z.enum(["bullish", "bearish", "neutral"]),
   reasoning: z.array(z.string()).min(1),
   advice: z.enum(["Buy", "Hold", "Sell", "Wait"]),
+  recommendation: z.string().optional().default(""),
   confidence: z.number().min(0).max(1),
   signalTrace: z.array(z.string()).optional().default([]),
 });
 
-function getSystemPrompt(mode: Mode, currentDate: string): string {
-  const basePrompts: Record<Mode, string> = {
-    normal: `You are TradeXpert AI, a helpful financial assistant. Today's date is ${currentDate}.`,
-    thinking: `You are TradeXpert AI, an institutional-grade financial analyst. Today's date is ${currentDate}.`,
-    pro: `You are TradeXpert AI, a Senior Investment Strategist providing deep market analysis. Today's date is ${currentDate}.`,
-  };
+const SIGNAL_WEIGHTS: Record<string, number> = {
+  fundamental_positive: 1.5,
+  bullish_signal: 1,
+  bearish_signal: -1,
+  geopolitical_risk: -1.2,
+  macro_risk: -1.5,
+};
 
-  return basePrompts[mode] + "\n" + OUTPUT_SCHEMA;
+function isComparisonQuery(query: string): boolean {
+  return /\b(vs|versus|compare|or)\b/i.test(query);
 }
 
-function buildContextPrompt(context: QueryContext): string {
-  let prompt = "";
-
-  const multiStockData = context.multiStockData;
-  if (multiStockData && Object.keys(multiStockData).length > 1) {
-    prompt += `### STOCK COMPARISON\n`;
-    for (const [symbol, data] of Object.entries(multiStockData) as [string, any][]) {
-      prompt += `\n## ${symbol}\n`;
-      if (data.price) {
-        prompt += `Price: $${data.price.current} (${data.price.changePercent.toFixed(2)}%)\n`;
-      }
-      if (data.metrics) {
-        const metricsBits: string[] = [];
-        if (typeof data.metrics.pe_ratio === "number") metricsBits.push(`P/E: ${data.metrics.pe_ratio.toFixed(1)}`);
-        if (typeof data.metrics.market_cap === "number") metricsBits.push(`Market Cap: $${(data.metrics.market_cap / 1e9).toFixed(1)}B`);
-        if (typeof data.metrics.revenue_growth === "number") metricsBits.push(`Revenue Growth: ${data.metrics.revenue_growth.toFixed(1)}%`);
-        if (typeof data.metrics.return_1m === "number") metricsBits.push(`1M Return: ${data.metrics.return_1m.toFixed(2)}%`);
-        if (typeof data.metrics.return_3m === "number") metricsBits.push(`3M Return: ${data.metrics.return_3m.toFixed(2)}%`);
-        if (typeof data.metrics.fifty_two_week_high === "number") metricsBits.push(`52W High: $${data.metrics.fifty_two_week_high.toFixed(2)}`);
-        if (typeof data.metrics.fifty_two_week_low === "number") metricsBits.push(`52W Low: $${data.metrics.fifty_two_week_low.toFixed(2)}`);
-        if (metricsBits.length > 0) {
-          prompt += `${metricsBits.join(" | ")}\n`;
-        }
-      }
-      if (data.news && data.news.length > 0) {
-        prompt += `Top News: ${data.news[0].headline.substring(0, 80)}...\n`;
-      }
-    }
-  }
-
-  if (context.priceData) {
-    prompt += `
-### PRICE DATA
-- Current: $${context.priceData.current}
-- Change: $${context.priceData.change} (${context.priceData.changePercent.toFixed(2)}%)
-- High: $${context.priceData.high}
-- Low: $${context.priceData.low}
-`;
-  }
-
-  if (context.metrics) {
-    prompt += `
-### METRICS
-${context.metrics.pe_ratio ? `- P/E: ${context.metrics.pe_ratio.toFixed(1)}` : ""}
-${context.metrics.market_cap ? `- Market Cap: $${(context.metrics.market_cap / 1e9).toFixed(1)}B` : ""}
-${context.metrics.revenue_growth ? `- Revenue Growth: ${context.metrics.revenue_growth.toFixed(1)}%` : ""}
-${context.metrics.debt_to_equity ? `- Debt/Equity: ${context.metrics.debt_to_equity.toFixed(1)}` : ""}
-`;
-  }
-
-  if (context.technicalIndicators) {
-    prompt += `
-### TECHNICAL INDICATORS
-${context.technicalIndicators.rsi ? `- RSI: ${context.technicalIndicators.rsi.value?.toFixed(1)} (${context.technicalIndicators.rsi.signal})` : ""}
-${context.technicalIndicators.macd ? `- MACD: ${context.technicalIndicators.macd.signal} (histogram: ${context.technicalIndicators.macd.histogram?.toFixed(2)})` : ""}
-${context.technicalIndicators.adx ? `- ADX: ${context.technicalIndicators.adx.value?.toFixed(1)} (${context.technicalIndicators.adx.signal})` : ""}
-${context.technicalIndicators.sma20 ? `- SMA 20: $${context.technicalIndicators.sma20?.toFixed(2)}` : ""}
-`;
-  }
-
-  if (context.news && context.news.length > 0) {
-    prompt += `
-### NEWS
-${context.news.slice(0, 3).map((n, i) => `${i + 1}. ${n.headline.substring(0, 100)}`).join("\n")}
-`;
-  }
-
-  if (context.searchResults && context.searchResults.length > 0) {
-    prompt += `
-### SEARCH RESULTS
-${context.searchResults.slice(0, 2).map((r, i) => `${i + 1}. ${r.title.substring(0, 80)}`).join("\n")}
-`;
-  }
-
-  if (context.sentiment) {
-    prompt += `
-### SENTIMENT
-- Overall: ${context.sentiment.overallSentiment}
-- Confidence: ${(context.sentiment.confidence * 100).toFixed(0)}%
-${context.sentiment.macroSignals.length > 0 ? `- Signals: ${context.sentiment.macroSignals.join(", ")}` : ""}
-`;
-  }
-
-  return prompt;
-}
-
-function parseJSONResponse(response: string): Partial<LLMResponse> | null {
-  try {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-
-    const parsedJson = JSON.parse(jsonMatch[0]);
-    const parsed = llmOutputSchema.safeParse(parsedJson);
-    if (!parsed.success) {
-      return null;
-    }
-
-    return {
-      summary: parsed.data.summary,
-      trend: parsed.data.trend as Trend,
-      reasoning: parsed.data.reasoning,
-      advice: parsed.data.advice as Advice,
-      confidence: Math.max(0, Math.min(1, parsed.data.confidence)),
-      signalTrace: parsed.data.signalTrace,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function createFallbackResponse(context: QueryContext, customMessage?: string): LLMResponse {
-  const hasData = context.priceData || context.news?.length || context.searchResults?.length;
-
-  return {
-    summary: customMessage || (hasData
-      ? "Analysis completed based on available market data."
-      : "Insufficient data available for comprehensive analysis."),
-    trend: "neutral" as Trend,
-    reasoning: hasData ? ["Based on available market data"] : ["No data available for analysis"],
-    advice: "Hold" as Advice,
-    confidence: 0.3,
-    dataQuality: assessDataQuality(context),
-    sources: [],
-    signalTrace: [],
-  };
-}
-
-export async function generateLLMResponse(
-  query: string,
-  context: QueryContext,
-  signals: SignalBundle | undefined,
-  mode: Mode
-): Promise<LLMResponse> {
-  const currentDate = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+function sanitizeText(input: string): string {
+  if (!input) return "";
+  const blockedPatterns = [
+    /rate limited/gi,
+    /too many requests/gi,
+    /api error/gi,
+    /429/gi,
+    /retry/gi,
+  ];
+  let cleaned = input;
+  blockedPatterns.forEach((pattern) => {
+    cleaned = cleaned.replace(pattern, "");
   });
-
-  const llm = mode === "pro" ? proLLM : fastLLM;
-
-  const contextPrompt = buildContextPrompt(context);
-  const signalPrompt = signals
-    ? `\n### SIGNALS\n${signals.signals.map(s => `- ${s.indicator}: ${s.signal} (${s.reasoning})`).join("\n")}\nOverall: ${signals.overallTrend}`
-    : "";
-
-  const userPrompt = `
-Query: ${query}
-
-${contextPrompt}
-${signalPrompt}
-
-Grounding requirements:
-- Use exact numbers from the context when available
-- If quoting a move, include the symbol and percentage
-- For two-stock comparison, provide at least one point for each stock
-- Prefer market data coming from aggregator inputs (price, metrics, and company news)
-- Use clear, structured English and avoid vague statements
-
-Provide your analysis as JSON following the schema above.
-`;
-
-  try {
-    const llmCall = async () => {
-      return await llm.invoke([
-        { role: "system", content: getSystemPrompt(mode, currentDate) },
-        { role: "user", content: userPrompt },
-      ]);
-    };
-
-    let response;
-    try {
-      response = await withRateLimit("gemini", llmCall, true);
-    } catch (rateLimitError: any) {
-      console.warn("[Response] Rate limited, using fallback:", rateLimitError.message);
-      const fallback = createFallbackResponse(context, "Rate limited. Please try again in a moment.");
-      fallback.confidence = calibrateConfidence(0.2, context, context.intent);
-      fallback.dataQuality = getDataQuality(context);
-      return fallback;
-    }
-
-    const content = typeof response === "string" ? response : response.content;
-    const parsed = parseJSONResponse(content);
-
-    if (parsed) {
-      const dataQuality = getDataQuality(context);
-      const calibratedConfidence = calibrateConfidence(
-        parsed.confidence || 0.5,
-        context,
-        context.intent
-      );
-
-      return {
-        summary: parsed.summary || "Analysis completed.",
-        trend: parsed.trend || "neutral",
-        reasoning: parsed.reasoning || ["Based on available data"],
-        advice: parsed.advice || "Hold",
-        confidence: calibratedConfidence,
-        dataQuality,
-        sources: collectSources(context),
-        signalTrace: parsed.signalTrace || signals?.signals.map(s => s.indicator) || [],
-      };
-    }
-
-    const fallback = createFallbackResponse(context);
-    fallback.confidence = calibrateConfidence(fallback.confidence, context, context.intent);
-    fallback.dataQuality = getDataQuality(context);
-    return fallback;
-  } catch (error: any) {
-    console.error("LLM response error:", error?.message || error);
-
-    if (error?.status === 429) {
-      setCooldown("gemini", 60000);
-      const fallback = createFallbackResponse(context, "API rate limit reached. Please wait a moment.");
-      fallback.confidence = 0.1;
-      fallback.dataQuality = "low";
-      return fallback;
-    }
-
-    return createFallbackResponse(context);
-  }
+  return cleaned.replace(/\s{2,}/g, " ").trim();
 }
 
-function collectSources(context: QueryContext): Source[] {
-  const sources: Source[] = [];
+function getSystemPrompt(mode: Mode, currentDate: string, comparison: boolean): string {
+  const role = mode === "pro"
+    ? "You are TradeXpert AI, a senior investment strategist."
+    : mode === "thinking"
+      ? "You are TradeXpert AI, an institutional-grade analyst."
+      : "You are TradeXpert AI, a practical market assistant.";
 
-  if (context.priceData) {
-    sources.push({ type: "finnhub", title: "Aggregator Price Feed" });
-  }
-  if (context.metrics) {
-    sources.push({ type: "finnhub", title: "Aggregator Financial Metrics" });
-  }
-  if (context.news && context.news.length > 0) {
-    sources.push({ type: "news", title: "Aggregator Company News" });
-  }
-  if (context.searchResults && context.searchResults.length > 0) {
-    sources.push({ type: "search", title: "Web Search" });
-  }
-  if (context.sentiment) {
-    sources.push({ type: "llm", title: "Sentiment Analysis" });
-  }
-
-  return sources;
+  return `${role} Today's date is ${currentDate}. ${comparison ? "This is a comparison query. You must provide a direct decision when confidence is adequate." : ""}\n${OUTPUT_SCHEMA}`;
 }
 
 function formatMoney(value?: number | null): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
-  if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
-  if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
-  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
+  const abs = Math.abs(value);
+  if (abs >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
   return `$${value.toFixed(2)}`;
 }
 
@@ -324,17 +115,32 @@ function formatNumber(value?: number | null): string {
   return value.toFixed(1);
 }
 
+function createTextTable(headers: string[], rows: string[][]): string {
+  const widths = headers.map((header, idx) => {
+    const maxRow = rows.reduce((acc, row) => Math.max(acc, (row[idx] || "").length), 0);
+    return Math.max(header.length, maxRow);
+  });
+
+  const drawRow = (cols: string[]) => `| ${cols.map((col, idx) => (col || "").padEnd(widths[idx], " ")).join(" | ")} |`;
+  const divider = `+-${widths.map((w) => "-".repeat(w)).join("-+-")}-+`;
+
+  const lines = [divider, drawRow(headers), divider];
+  rows.forEach((row) => lines.push(drawRow(row)));
+  lines.push(divider);
+  return lines.join("\n");
+}
+
 function getEdgeLabel(
-  labelA: string,
+  symbolA: string,
   valueA?: number | null,
-  labelB?: string,
+  symbolB?: string,
   valueB?: number | null,
   lowerIsBetter: boolean = false
 ): string {
-  if (!labelB || typeof valueA !== "number" || typeof valueB !== "number") return "-";
+  if (!symbolB || typeof valueA !== "number" || typeof valueB !== "number") return "-";
   if (Math.abs(valueA - valueB) < 1e-9) return "Tie";
   const aBetter = lowerIsBetter ? valueA < valueB : valueA > valueB;
-  return aBetter ? labelA : labelB;
+  return aBetter ? symbolA : symbolB;
 }
 
 function computeDistancePercent(current?: number | null, reference?: number | null): number | null {
@@ -344,227 +150,397 @@ function computeDistancePercent(current?: number | null, reference?: number | nu
     !Number.isFinite(current) ||
     !Number.isFinite(reference) ||
     reference === 0
-  ) {
-    return null;
-  }
+  ) return null;
+
   return ((current - reference) / reference) * 100;
 }
 
-function createTextTable(headers: string[], rows: string[][]): string {
-  const widths = headers.map((header, index) => {
-    const rowWidth = rows.reduce((max, row) => Math.max(max, (row[index] || "").length), 0);
-    return Math.max(header.length, rowWidth);
-  });
+function buildContextPrompt(context: QueryContext): string {
+  let prompt = "";
 
-  const drawRow = (cols: string[]) => {
-    return `| ${cols.map((cell, idx) => (cell || "").padEnd(widths[idx], " ")).join(" | ")} |`;
-  };
-
-  const divider = `+-${widths.map((w) => "-".repeat(w)).join("-+-")}-+`;
-
-  const lines = [divider, drawRow(headers), divider];
-  for (const row of rows) {
-    lines.push(drawRow(row));
+  if (context.multiStockData && Object.keys(context.multiStockData).length > 1) {
+    prompt += "STOCK COMPARISON DATA\n";
+    Object.entries(context.multiStockData).forEach(([symbol, data]) => {
+      prompt += `\n${symbol}\n`;
+      if (data.price) {
+        prompt += `Price: ${data.price.current}; 1D Move: ${data.price.changePercent.toFixed(2)}%\n`;
+      }
+      if (data.metrics) {
+        const bits: string[] = [];
+        if (typeof data.metrics.pe_ratio === "number") bits.push(`P/E ${data.metrics.pe_ratio.toFixed(1)}`);
+        if (typeof data.metrics.revenue_growth === "number") bits.push(`RevGrowth ${data.metrics.revenue_growth.toFixed(2)}%`);
+        if (typeof data.metrics.market_cap === "number") bits.push(`MCap ${data.metrics.market_cap}`);
+        if (typeof data.metrics.return_1m === "number") bits.push(`1M ${data.metrics.return_1m.toFixed(2)}%`);
+        if (typeof data.metrics.return_3m === "number") bits.push(`3M ${data.metrics.return_3m.toFixed(2)}%`);
+        if (typeof data.metrics.return_52w === "number") bits.push(`52W ${data.metrics.return_52w.toFixed(2)}%`);
+        if (bits.length > 0) prompt += `${bits.join(" | ")}\n`;
+      }
+      if (data.news?.length) {
+        prompt += `TopNews: ${data.news[0].headline}\n`;
+      }
+    });
   }
-  lines.push(divider);
 
-  return lines.join("\n");
+  if (context.priceData) {
+    prompt += `\nPRICE\nCurrent ${context.priceData.current}; Change ${context.priceData.changePercent.toFixed(2)}%; High ${context.priceData.high}; Low ${context.priceData.low}\n`;
+  }
+
+  if (context.metrics) {
+    const bits: string[] = [];
+    if (typeof context.metrics.pe_ratio === "number") bits.push(`P/E ${context.metrics.pe_ratio.toFixed(1)}`);
+    if (typeof context.metrics.market_cap === "number") bits.push(`MCap ${context.metrics.market_cap}`);
+    if (typeof context.metrics.revenue_growth === "number") bits.push(`RevGrowth ${context.metrics.revenue_growth.toFixed(2)}%`);
+    if (typeof context.metrics.return_1m === "number") bits.push(`1M ${context.metrics.return_1m.toFixed(2)}%`);
+    if (typeof context.metrics.return_3m === "number") bits.push(`3M ${context.metrics.return_3m.toFixed(2)}%`);
+    if (bits.length > 0) prompt += `\nMETRICS\n${bits.join(" | ")}\n`;
+  }
+
+  if (context.news?.length) {
+    prompt += `\nNEWS\n${context.news.slice(0, 3).map((n, i) => `${i + 1}. ${n.headline}`).join("\n")}\n`;
+  }
+
+  if (context.sentiment) {
+    prompt += `\nSENTIMENT\nOverall ${context.sentiment.overallSentiment}; Confidence ${(context.sentiment.confidence * 100).toFixed(0)}%; Signals ${context.sentiment.macroSignals.join(", ")}\n`;
+  }
+
+  return prompt;
 }
 
-function getComparisonLeader(context: QueryContext): string | null {
-  const multiStockData = context.multiStockData;
-  if (!multiStockData) return null;
+function parseJSONResponse(raw: string): Partial<LLMResponse> | null {
+  const content = typeof raw === "string" ? raw : String(raw || "");
+  const match = content.match(/\{[\s\S]*\}/);
+  if (!match) return null;
 
-  const symbols = Object.keys(multiStockData);
-  if (symbols.length < 2) return null;
+  try {
+    const parsed = llmOutputSchema.safeParse(JSON.parse(match[0]));
+    if (!parsed.success) return null;
+
+    return {
+      summary: parsed.data.summary,
+      trend: parsed.data.trend,
+      reasoning: parsed.data.reasoning,
+      advice: parsed.data.advice,
+      recommendation: parsed.data.recommendation,
+      confidence: parsed.data.confidence,
+      signalTrace: parsed.data.signalTrace,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildFallbackReasoning(context: QueryContext): string[] {
+  const points: string[] = [];
+
+  if (context.multiStockData && Object.keys(context.multiStockData).length >= 2) {
+    const [symbolA, symbolB] = Object.keys(context.multiStockData);
+    const a = context.multiStockData[symbolA];
+    const b = context.multiStockData[symbolB];
+
+    if (typeof a?.metrics?.pe_ratio === "number" && typeof b?.metrics?.pe_ratio === "number") {
+      points.push(`${symbolA} P/E is ${a.metrics.pe_ratio.toFixed(1)} versus ${symbolB} at ${b.metrics.pe_ratio.toFixed(1)}.`);
+    }
+    if (typeof a?.metrics?.revenue_growth === "number" && typeof b?.metrics?.revenue_growth === "number") {
+      points.push(`${symbolA} revenue growth is ${a.metrics.revenue_growth.toFixed(2)}% versus ${symbolB} at ${b.metrics.revenue_growth.toFixed(2)}%.`);
+    }
+    if (typeof a?.price?.changePercent === "number" && typeof b?.price?.changePercent === "number") {
+      points.push(`${symbolA} 1-day move is ${a.price.changePercent.toFixed(2)}% versus ${symbolB} at ${b.price.changePercent.toFixed(2)}%.`);
+    }
+  }
+
+  if (points.length < 3 && context.priceData) {
+    points.push(`Latest price is ${context.priceData.current.toFixed(2)} with a 1-day change of ${context.priceData.changePercent.toFixed(2)}%.`);
+  }
+  if (points.length < 3 && typeof context.metrics?.market_cap === "number") {
+    points.push(`Market capitalization is ${formatMoney(context.metrics.market_cap)} based on aggregator metrics.`);
+  }
+  if (points.length < 3 && context.news?.length) {
+    points.push(`Recent catalyst count is ${context.news.length} headlines in the current context window.`);
+  }
+
+  while (points.length < 3) {
+    points.push("Data coverage is limited for one or more metrics, reducing conviction.");
+  }
+
+  return points.slice(0, 4);
+}
+
+function getSignalScore(context: QueryContext): number {
+  const signals = context.sentiment?.macroSignals || [];
+  return signals.reduce((acc, signal) => acc + (SIGNAL_WEIGHTS[signal] || 0), 0);
+}
+
+function buildComparisonScores(context: QueryContext): Record<string, number> {
+  const result: Record<string, number> = {};
+  if (!context.multiStockData) return result;
+  const symbols = Object.keys(context.multiStockData);
+  if (symbols.length < 2) return result;
 
   const [aSymbol, bSymbol] = symbols;
-  const a = multiStockData[aSymbol];
-  const b = multiStockData[bSymbol];
-  let aScore = 0;
-  let bScore = 0;
-
-  const aGrowth = a?.metrics?.revenue_growth;
-  const bGrowth = b?.metrics?.revenue_growth;
-  if (typeof aGrowth === "number" && typeof bGrowth === "number") {
-    if (aGrowth > bGrowth) aScore += 1;
-    if (bGrowth > aGrowth) bScore += 1;
-  }
+  const a = context.multiStockData[aSymbol];
+  const b = context.multiStockData[bSymbol];
+  result[aSymbol] = 0;
+  result[bSymbol] = 0;
 
   const aPE = a?.metrics?.pe_ratio;
   const bPE = b?.metrics?.pe_ratio;
   if (typeof aPE === "number" && typeof bPE === "number") {
-    if (aPE < bPE) aScore += 1;
-    if (bPE < aPE) bScore += 1;
+    if (aPE < bPE) result[aSymbol] += 1.2;
+    else if (bPE < aPE) result[bSymbol] += 1.2;
   }
 
-  const aMove = a?.price?.changePercent;
-  const bMove = b?.price?.changePercent;
-  if (typeof aMove === "number" && typeof bMove === "number") {
-    if (aMove > bMove) aScore += 1;
-    if (bMove > aMove) bScore += 1;
-  }
-
-  if (aScore === bScore) return null;
-  return aScore > bScore ? aSymbol : bSymbol;
-}
-
-function buildComparisonTable(context: QueryContext): string {
-  const multiStockData = context.multiStockData;
-  if (!multiStockData) return "";
-
-  const symbols = Object.keys(multiStockData);
-  if (symbols.length < 2) return "";
-
-  const first = symbols[0];
-  const second = symbols[1];
-  const a = multiStockData[first];
-  const b = multiStockData[second];
-
-  const aPrice = a?.price?.current;
-  const bPrice = b?.price?.current;
-  const aMove = a?.price?.changePercent;
-  const bMove = b?.price?.changePercent;
-  const aPE = a?.metrics?.pe_ratio;
-  const bPE = b?.metrics?.pe_ratio;
   const aGrowth = a?.metrics?.revenue_growth;
   const bGrowth = b?.metrics?.revenue_growth;
-  const aCap = a?.metrics?.market_cap;
-  const bCap = b?.metrics?.market_cap;
-  const aHigh52 = a?.metrics?.fifty_two_week_high;
-  const bHigh52 = b?.metrics?.fifty_two_week_high;
-  const aLow52 = a?.metrics?.fifty_two_week_low;
-  const bLow52 = b?.metrics?.fifty_two_week_low;
-  const aDistHigh52 = computeDistancePercent(aPrice, aHigh52);
-  const bDistHigh52 = computeDistancePercent(bPrice, bHigh52);
-  const aDistLow52 = computeDistancePercent(aPrice, aLow52);
-  const bDistLow52 = computeDistancePercent(bPrice, bLow52);
-
-  const aReturn1m = a?.metrics?.return_1m;
-  const bReturn1m = b?.metrics?.return_1m;
-  const aReturn3m = a?.metrics?.return_3m;
-  const bReturn3m = b?.metrics?.return_3m;
-  const aReturn52w = a?.metrics?.return_52w;
-  const bReturn52w = b?.metrics?.return_52w;
-
-  const rows: string[][] = [];
-  if (typeof aPrice === "number" || typeof bPrice === "number") {
-    rows.push(["Price", formatMoney(aPrice), formatMoney(bPrice), "-"]);
-  }
-  if (typeof aMove === "number" || typeof bMove === "number") {
-    rows.push(["1D Move", formatPercent(aMove), formatPercent(bMove), getEdgeLabel(first, aMove, second, bMove)]);
-  }
-  if (typeof aPE === "number" || typeof bPE === "number") {
-    rows.push(["P/E", formatNumber(aPE), formatNumber(bPE), getEdgeLabel(first, aPE, second, bPE, true)]);
-  }
-  if (typeof aGrowth === "number" || typeof bGrowth === "number") {
-    rows.push(["Revenue Growth (YoY)", formatPercent(aGrowth), formatPercent(bGrowth), getEdgeLabel(first, aGrowth, second, bGrowth)]);
-  }
-  if (typeof aCap === "number" || typeof bCap === "number") {
-    rows.push(["Market Cap", formatMoney(aCap), formatMoney(bCap), getEdgeLabel(first, aCap, second, bCap)]);
-  }
-  if (typeof aReturn1m === "number" || typeof bReturn1m === "number") {
-    rows.push(["1M Return", formatPercent(aReturn1m), formatPercent(bReturn1m), getEdgeLabel(first, aReturn1m, second, bReturn1m)]);
-  }
-  if (typeof aReturn3m === "number" || typeof bReturn3m === "number") {
-    rows.push(["3M Return", formatPercent(aReturn3m), formatPercent(bReturn3m), getEdgeLabel(first, aReturn3m, second, bReturn3m)]);
-  }
-  if (typeof aReturn52w === "number" || typeof bReturn52w === "number") {
-    rows.push(["52W Return", formatPercent(aReturn52w), formatPercent(bReturn52w), getEdgeLabel(first, aReturn52w, second, bReturn52w)]);
-  }
-  if (aDistHigh52 !== null || bDistHigh52 !== null) {
-    rows.push(["Distance to 52W High", formatPercent(aDistHigh52), formatPercent(bDistHigh52), getEdgeLabel(first, aDistHigh52, second, bDistHigh52)]);
-  }
-  if (aDistLow52 !== null || bDistLow52 !== null) {
-    rows.push(["Distance to 52W Low", formatPercent(aDistLow52), formatPercent(bDistLow52), getEdgeLabel(first, aDistLow52, second, bDistLow52)]);
+  if (typeof aGrowth === "number" && typeof bGrowth === "number") {
+    if (aGrowth > bGrowth) result[aSymbol] += 1.5;
+    else if (bGrowth > aGrowth) result[bSymbol] += 1.5;
   }
 
-  if (rows.length === 0) return "";
+  const a3m = a?.metrics?.return_3m;
+  const b3m = b?.metrics?.return_3m;
+  if (typeof a3m === "number" && typeof b3m === "number") {
+    if (a3m > b3m) result[aSymbol] += 1.0;
+    else if (b3m > a3m) result[bSymbol] += 1.0;
+  }
 
-  return `Comparison Table\n${createTextTable(["Metric", first, second, "Edge"], rows)}\n\n`;
+  const a1d = a?.price?.changePercent;
+  const b1d = b?.price?.changePercent;
+  if (typeof a1d === "number" && typeof b1d === "number") {
+    if (a1d > b1d) result[aSymbol] += 0.5;
+    else if (b1d > a1d) result[bSymbol] += 0.5;
+  }
+
+  return result;
 }
 
-function buildHistoricalContext(context: QueryContext): string {
-  if (context.multiStockData && Object.keys(context.multiStockData).length > 1) {
-    const symbols = Object.keys(context.multiStockData).slice(0, 2);
-    const lines: string[] = [];
-
-    for (const symbol of symbols) {
-      const data = context.multiStockData[symbol];
-      const current = data?.price?.current;
-      const high52 = data?.metrics?.fifty_two_week_high;
-      const low52 = data?.metrics?.fifty_two_week_low;
-      const distHigh = computeDistancePercent(current, high52);
-      const distLow = computeDistancePercent(current, low52);
-      const growth = data?.metrics?.revenue_growth;
-      const ret1m = data?.metrics?.return_1m;
-      const ret3m = data?.metrics?.return_3m;
-
-      const parts = [`${symbol}:`];
-      if (distHigh !== null) parts.push(`${formatPercent(distHigh)} vs 52W high`);
-      if (distLow !== null) parts.push(`${formatPercent(distLow)} vs 52W low`);
-      if (typeof growth === "number") parts.push(`${formatPercent(growth)} YoY revenue growth`);
-      if (typeof ret1m === "number") parts.push(`${formatPercent(ret1m)} over 1 month`);
-      if (typeof ret3m === "number") parts.push(`${formatPercent(ret3m)} over 3 months`);
-
-      if (parts.length > 1) {
-        lines.push(`- ${parts.join(" ")}`);
-      }
-    }
-
-    if (lines.length > 0) {
-      return `Past vs Current\n${lines.join("\n")}\n\n`;
-    }
+function enforceDecisionPolicy(
+  parsed: Partial<LLMResponse>,
+  query: string,
+  context: QueryContext,
+  calibratedConfidence: number
+): { advice: Advice; recommendation: string } {
+  const comparison = isComparisonQuery(query) || context.intent === "comparison";
+  if (!comparison) {
+    return {
+      advice: (parsed.advice as Advice) || "Hold",
+      recommendation: sanitizeText(parsed.recommendation || ""),
+    };
   }
 
-  if (context.priceData) {
-    const distFromPrevClose = context.priceData.prevClose
-      ? computeDistancePercent(context.priceData.current, context.priceData.prevClose)
-      : null;
-    const distFromOpen = context.priceData.open
-      ? computeDistancePercent(context.priceData.current, context.priceData.open)
-      : null;
-    const growth = context.metrics?.revenue_growth;
-    const points: string[] = [];
-
-    if (distFromPrevClose !== null) points.push(`- ${formatPercent(distFromPrevClose)} vs previous close`);
-    if (distFromOpen !== null) points.push(`- ${formatPercent(distFromOpen)} vs today open`);
-    if (typeof growth === "number") points.push(`- ${formatPercent(growth)} YoY revenue growth`);
-
-    if (points.length > 0) {
-      return `Past vs Current\n${points.join("\n")}\n\n`;
-    }
+  const scores = buildComparisonScores(context);
+  const symbols = Object.keys(scores);
+  if (symbols.length < 2) {
+    return { advice: "Wait", recommendation: "No clear winner due limited comparative data." };
   }
 
-  return "";
+  const [a, b] = symbols;
+  const aScore = scores[a];
+  const bScore = scores[b];
+  const preferred = aScore === bScore ? "" : aScore > bScore ? a : b;
+
+  if (calibratedConfidence > 0.6 && preferred) {
+    return { advice: "Buy", recommendation: `Prefer ${preferred} over ${preferred === a ? b : a} on current comparative metrics.` };
+  }
+
+  if (calibratedConfidence >= 0.4 && calibratedConfidence <= 0.6 && preferred) {
+    return { advice: "Hold", recommendation: `Slight preference for ${preferred}, but conviction is moderate.` };
+  }
+
+  return { advice: "Wait", recommendation: "No clear winner at current confidence; wait for stronger confirmation." };
 }
 
-function buildActionablePlan(response: LLMResponse, context: QueryContext): string {
-  const leader = getComparisonLeader(context);
-  const leaderText = leader ? ` Focus watchlist priority on ${leader}.` : "";
-  let weekPlan = "";
-  let monthPlan = "";
+function shouldRunProReviewer(
+  parsed: Partial<LLMResponse> | null,
+  query: string,
+  context: QueryContext,
+  startTime: number
+): boolean {
+  if (Date.now() - startTime > 7000) return false;
+  if (isComparisonQuery(query) || context.intent === "comparison") return true;
+  if (!parsed) return true;
 
-  switch (response.advice) {
-    case "Buy":
-      weekPlan = `Start with phased entries (2-3 tranches) instead of one order.${leaderText}`;
-      monthPlan = "Add only if price action and headline flow remain supportive; rebalance if valuation premium stretches further.";
-      break;
-    case "Hold":
-      weekPlan = "Keep position size steady and avoid chasing intraday moves.";
-      monthPlan = "Review earnings/news trend and relative valuation before increasing exposure.";
-      break;
-    case "Sell":
-      weekPlan = "Reduce exposure in staged exits to avoid poor fills during volatility.";
-      monthPlan = "Re-enter only if fundamentals and momentum stabilize versus peers.";
-      break;
-    default:
-      weekPlan = `Wait for cleaner confirmation (price stabilization + clearer catalyst direction).${leaderText}`;
-      monthPlan = "Reassess after the next major catalyst cycle (earnings, guidance, or regulatory updates).";
-      break;
+  const weakReasoning = !parsed.reasoning || parsed.reasoning.some((r) => !/\d/.test(r));
+  if (weakReasoning) return true;
+  if ((parsed.confidence || 0) < 0.5) return true;
+
+  return false;
+}
+
+async function callLLM(
+  llm: any,
+  systemPrompt: string,
+  userPrompt: string,
+  rateLimitKey: string
+): Promise<string | null> {
+  const call = async () => {
+    const response = await llm.invoke([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
+    return typeof response === "string" ? response : response.content;
+  };
+
+  try {
+    const result = await withRateLimit(rateLimitKey, call, true);
+    return typeof result === "string" ? result : String(result || "");
+  } catch {
+    return null;
   }
+}
 
-  return `Actionable Plan\n- 1-2 week: ${weekPlan}\n- 1-3 month: ${monthPlan}\n\n`;
+function mergeProResponses(draft: Partial<LLMResponse> | null, reviewed: Partial<LLMResponse> | null): Partial<LLMResponse> | null {
+  if (!draft && !reviewed) return null;
+  if (!draft) return reviewed;
+  if (!reviewed) return draft;
+
+  const draftScore = (draft.reasoning || []).filter((r) => /\d/.test(r)).length;
+  const reviewedScore = (reviewed.reasoning || []).filter((r) => /\d/.test(r)).length;
+
+  return reviewedScore >= draftScore ? { ...draft, ...reviewed } : draft;
+}
+
+function collectSources(context: QueryContext): Source[] {
+  const sources: Source[] = [];
+  if (context.priceData) sources.push({ type: "finnhub", title: "Aggregator Price Feed" });
+  if (context.metrics) sources.push({ type: "finnhub", title: "Aggregator Financial Metrics" });
+  if (context.news?.length) sources.push({ type: "news", title: "Aggregator Company News" });
+  if (context.searchResults?.length) sources.push({ type: "search", title: "Web Search" });
+  if (context.sentiment) sources.push({ type: "llm", title: "Sentiment Analysis" });
+  return sources;
+}
+
+function createFallbackResponse(context: QueryContext): LLMResponse {
+  return {
+    summary: "Analysis is temporarily unavailable. Please retry.",
+    trend: "neutral",
+    reasoning: buildFallbackReasoning(context),
+    advice: "Wait",
+    recommendation: context.intent === "comparison" ? "No clear winner due current system constraints." : "",
+    confidence: 0.2,
+    dataQuality: assessDataQuality(context),
+    sources: collectSources(context),
+    signalTrace: [],
+  };
+}
+
+function applyTrendAdjustment(initialTrend: Trend, context: QueryContext): Trend {
+  const score = getSignalScore(context);
+  if (score <= -1.5) return "bearish";
+  if (score >= 1.5) return "bullish";
+  return initialTrend;
+}
+
+function ensureValidResponse(
+  parsed: Partial<LLMResponse> | null,
+  query: string,
+  context: QueryContext,
+  signals: SignalBundle | undefined
+): LLMResponse {
+  if (!parsed) return createFallbackResponse(context);
+
+  const confidence = calibrateConfidence(parsed.confidence ?? 0.35, context, context.intent);
+  const policy = enforceDecisionPolicy(parsed, query, context, confidence);
+  const trend = applyTrendAdjustment((parsed.trend as Trend) || "neutral", context);
+  const reasoning = (parsed.reasoning || []).filter((line) => sanitizeText(line).length > 0);
+
+  return {
+    summary: sanitizeText(parsed.summary || "Analysis completed based on available data.") || "Analysis completed based on available data.",
+    trend,
+    reasoning: reasoning.length >= 3 ? reasoning : buildFallbackReasoning(context),
+    advice: policy.advice,
+    recommendation: policy.recommendation,
+    confidence,
+    dataQuality: getDataQuality(context),
+    sources: collectSources(context),
+    signalTrace: parsed.signalTrace?.length ? parsed.signalTrace : (signals?.signals.map((s) => s.indicator) || []),
+  };
+}
+
+export async function generateLLMResponse(
+  query: string,
+  context: QueryContext,
+  signals: SignalBundle | undefined,
+  mode: Mode
+): Promise<LLMResponse> {
+  const startTime = Date.now();
+  const comparison = isComparisonQuery(query) || context.intent === "comparison";
+  const currentDate = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const contextPrompt = buildContextPrompt(context);
+  const signalPrompt = signals
+    ? `\nSIGNALS\n${signals.signals.map((s) => `- ${s.indicator}: ${s.signal} (${s.reasoning})`).join("\n")}\nOverall: ${signals.overallTrend}`
+    : "";
+
+  const userPrompt = `
+Query: ${query}
+
+${contextPrompt}
+${signalPrompt}
+
+Grounding requirements:
+- Use exact numbers from context
+- Include at least 3 reasoning points with numbers
+- For comparison queries, produce a direct recommendation
+- Prefer aggregator data over narrative assumptions
+`;
+
+  try {
+    if (mode !== "pro") {
+      const raw = await callLLM(
+        fastLLM,
+        getSystemPrompt(mode, currentDate, comparison),
+        userPrompt,
+        "gemini"
+      );
+      return ensureValidResponse(parseJSONResponse(raw || ""), query, context, signals);
+    }
+
+    const draftRaw = await callLLM(
+      proFlashLLM,
+      getSystemPrompt("pro", currentDate, comparison),
+      userPrompt,
+      "gemini-pro-flash"
+    );
+    const draftParsed = parseJSONResponse(draftRaw || "");
+
+    let finalParsed: Partial<LLMResponse> | null = draftParsed;
+
+    const withinDeadline = Date.now() - startTime < PRO_DEADLINE_MS;
+    if (withinDeadline && shouldRunProReviewer(draftParsed, query, context, startTime)) {
+      const reviewPrompt = `
+You are reviewing a draft investment response. Improve reasoning clarity and decision quality without inventing data.
+
+DRAFT JSON:
+${draftRaw || "{}"}
+
+DATA CONTEXT:
+${contextPrompt}
+
+Return revised JSON using the exact schema.
+`;
+
+      const reviewedRaw = await callLLM(
+        proReasoningLLM,
+        getSystemPrompt("pro", currentDate, comparison),
+        reviewPrompt,
+        "gemini-pro-review"
+      );
+      const reviewedParsed = parseJSONResponse(reviewedRaw || "");
+      finalParsed = mergeProResponses(draftParsed, reviewedParsed);
+    }
+
+    return ensureValidResponse(finalParsed, query, context, signals);
+  } catch (error: any) {
+    console.error("LLM response error:", error?.message || error);
+    if (error?.status === 429) {
+      setCooldown("gemini", 60000);
+    }
+    return createFallbackResponse(context);
+  }
 }
 
 function buildDataCoverage(context: QueryContext): string {
@@ -578,7 +554,7 @@ function buildDataCoverage(context: QueryContext): string {
       typeof data?.metrics?.pe_ratio === "number",
       typeof data?.metrics?.market_cap === "number",
       typeof data?.metrics?.revenue_growth === "number",
-      Array.isArray(data?.news) && (data?.news?.length || 0) > 0,
+      Array.isArray(data?.news) && (data.news?.length || 0) > 0,
       typeof data?.metrics?.return_1m === "number" || typeof data?.metrics?.return_3m === "number" || typeof data?.metrics?.return_52w === "number",
     ];
     const available = fields.filter(Boolean).length;
@@ -588,28 +564,85 @@ function buildDataCoverage(context: QueryContext): string {
   return `Data Coverage\n${lines.join("\n")}\n\n`;
 }
 
+function buildComparisonTable(context: QueryContext): string {
+  if (!context.multiStockData || Object.keys(context.multiStockData).length < 2) return "";
+
+  const [first, second] = Object.keys(context.multiStockData);
+  const a = context.multiStockData[first];
+  const b = context.multiStockData[second];
+
+  const aPrice = a?.price?.current;
+  const bPrice = b?.price?.current;
+  const aMove = a?.price?.changePercent;
+  const bMove = b?.price?.changePercent;
+  const aPE = a?.metrics?.pe_ratio;
+  const bPE = b?.metrics?.pe_ratio;
+  const aGrowth = a?.metrics?.revenue_growth;
+  const bGrowth = b?.metrics?.revenue_growth;
+  const aCap = a?.metrics?.market_cap;
+  const bCap = b?.metrics?.market_cap;
+  const a3m = a?.metrics?.return_3m;
+  const b3m = b?.metrics?.return_3m;
+
+  const rows: string[][] = [];
+  if (typeof aPrice === "number" || typeof bPrice === "number") rows.push(["Price", formatMoney(aPrice), formatMoney(bPrice), "-"]);
+  if (typeof aMove === "number" || typeof bMove === "number") rows.push(["1D Move", formatPercent(aMove), formatPercent(bMove), getEdgeLabel(first, aMove, second, bMove)]);
+  if (typeof aPE === "number" || typeof bPE === "number") rows.push(["P/E", formatNumber(aPE), formatNumber(bPE), getEdgeLabel(first, aPE, second, bPE, true)]);
+  if (typeof aGrowth === "number" || typeof bGrowth === "number") rows.push(["Revenue Growth (YoY)", formatPercent(aGrowth), formatPercent(bGrowth), getEdgeLabel(first, aGrowth, second, bGrowth)]);
+  if (typeof aCap === "number" || typeof bCap === "number") rows.push(["Market Cap", formatMoney(aCap), formatMoney(bCap), getEdgeLabel(first, aCap, second, bCap)]);
+  if (typeof a3m === "number" || typeof b3m === "number") rows.push(["3M Return", formatPercent(a3m), formatPercent(b3m), getEdgeLabel(first, a3m, second, b3m)]);
+
+  const aDistHigh = computeDistancePercent(a?.price?.current, a?.metrics?.fifty_two_week_high);
+  const bDistHigh = computeDistancePercent(b?.price?.current, b?.metrics?.fifty_two_week_high);
+  if (aDistHigh !== null || bDistHigh !== null) rows.push(["Distance to 52W High", formatPercent(aDistHigh), formatPercent(bDistHigh), getEdgeLabel(first, aDistHigh, second, bDistHigh)]);
+
+  if (rows.length === 0) return "";
+  return `Comparison Table\n${createTextTable(["Metric", first, second, "Edge"], rows)}\n\n`;
+}
+
+function buildActionablePlan(response: LLMResponse): string {
+  let week = "";
+  let month = "";
+
+  switch (response.advice) {
+    case "Buy":
+      week = "Use staged entries across 2-3 tranches and avoid a single full allocation.";
+      month = "Add exposure only if momentum and revisions remain supportive.";
+      break;
+    case "Sell":
+      week = "Reduce exposure in stages to avoid poor execution in volatile sessions.";
+      month = "Re-enter only after valuation and momentum stabilize.";
+      break;
+    case "Hold":
+      week = "Keep allocation unchanged and avoid chasing short-term moves.";
+      month = "Re-evaluate after the next major catalyst or earnings update.";
+      break;
+    default:
+      week = "Wait for clearer trend confirmation and cleaner risk/reward.";
+      month = "Reassess once data consistency and signal alignment improve.";
+      break;
+  }
+
+  return `Actionable Plan\n- 1-2 week: ${week}\n- 1-3 month: ${month}\n\n`;
+}
+
 export function transformForMarkdown(response: LLMResponse, context: QueryContext): string {
   let output = `Investment Summary\n${response.summary}\n\n`;
   output += "Decision Snapshot\n";
   output += `- Trend: ${response.trend.toUpperCase()}\n`;
   output += `- Advice: ${response.advice}\n`;
+  if (response.recommendation) output += `- Recommendation: ${response.recommendation}\n`;
   output += `- Confidence: ${(response.confidence * 100).toFixed(0)}%\n`;
   output += `- Data Quality: ${response.dataQuality === "high" ? "High" : response.dataQuality === "medium" ? "Medium" : "Low"}\n\n`;
-  output += "All primary comparison metrics are sourced from the aggregator pipeline (Finnhub, Alpha Vantage, NewsAPI).\n\n";
+  output += "All primary metrics are sourced from aggregator data (Finnhub, Alpha Vantage, NewsAPI).\n\n";
 
-  const dataCoverage = buildDataCoverage(context);
-  if (dataCoverage) output += dataCoverage;
-
-  const comparisonTable = buildComparisonTable(context);
-  if (comparisonTable) output += comparisonTable;
-
-  const historicalContext = buildHistoricalContext(context);
-  if (historicalContext) output += historicalContext;
+  output += buildDataCoverage(context);
+  output += buildComparisonTable(context);
 
   if (response.reasoning.length > 0) {
     output += "Reasoning\n";
-    response.reasoning.forEach((r, i) => {
-      output += `${i + 1}. ${r}\n`;
+    response.reasoning.forEach((item, idx) => {
+      output += `${idx + 1}. ${item}\n`;
     });
     output += "\n";
   }
@@ -624,28 +657,20 @@ export function transformForMarkdown(response: LLMResponse, context: QueryContex
     output += "\n";
   }
 
-  if (response.signalTrace.length > 0) {
-    output += "Signal Trace\n";
-    response.signalTrace.forEach((s) => {
-      output += `- ${s}\n`;
-    });
-    output += "\n";
-  }
-
-  if (context.news && context.news.length > 0) {
+  if (context.news?.length) {
     output += "Recent Catalysts\n";
-    context.news.slice(0, 3).forEach((n, idx) => {
-      output += `${idx + 1}. ${n.headline}\n`;
+    context.news.slice(0, 3).forEach((item, idx) => {
+      output += `${idx + 1}. ${item.headline}\n`;
     });
     output += "\n";
   }
 
-  output += buildActionablePlan(response, context);
+  output += buildActionablePlan(response);
 
   if (response.sources.length > 0) {
     output += "Sources\n";
-    response.sources.forEach((s) => {
-      output += `- ${s.title || s.type}\n`;
+    response.sources.forEach((source) => {
+      output += `- ${source.title || source.type}\n`;
     });
   }
 

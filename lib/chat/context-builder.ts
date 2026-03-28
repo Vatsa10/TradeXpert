@@ -32,7 +32,15 @@ function normalizeMetrics(raw: any): FinancialMetrics | null {
 
   const pe = toNumber(metric.peTTM ?? metric.peNormalizedAnnual ?? metric.peBasicExclExtraTTM ?? metric.PERatio);
   const pb = toNumber(metric.pbAnnual ?? metric.pbQuarterly ?? metric.PriceToBookRatio);
-  const marketCap = toNumber(metric.marketCapitalization ?? metric.MarketCapitalization);
+  const marketCapRawFinnhub = toNumber(metric.marketCapitalization);
+  const marketCapRawAlpha = toNumber(metric.MarketCapitalization);
+  let marketCap: number | undefined = undefined;
+  
+  if (typeof marketCapRawAlpha === "number") {
+    marketCap = marketCapRawAlpha * 1e9;
+  } else if (typeof marketCapRawFinnhub === "number") {
+    marketCap = marketCapRawFinnhub;
+  }
   const revenueGrowth = normalizePercent(
     metric.revenueGrowthTTMYoy ?? metric.revenueGrowth3Y ?? metric.revenueGrowth5Y ?? metric.QuarterlyRevenueGrowthYOY
   );
@@ -277,7 +285,7 @@ export async function buildContext(
     };
   }
 
-  const headlines = context.news.map((n) => n.headline).slice(0, 12);
+  const headlines = context.news.map((n) => n.headline).slice(0, 10);
   if (headlines.length > 0) {
     context.sentiment = await analyzeSentiment(headlines);
   }
@@ -388,7 +396,7 @@ export async function buildMultiStockContext(
   context.searchResults = (results.search as SearchResult[] | undefined) || [];
   context.multiStockData = stockData;
 
-  const headlines = allNews.map((n) => n.headline).slice(0, 18);
+  const headlines = allNews.map((n) => n.headline).slice(0, 10);
   context.sentiment = await analyzeSentiment(headlines);
 
   if (Object.keys(errors).length > 0) {
