@@ -1,11 +1,12 @@
 
 import { fetchJSON } from "../actions/finnhub.actions";
 import { getDateRange } from "../utils";
+import { getCacheKey, getOrFetch, getTTL } from "./cache";
 
 const FINNHUB_BASE_URL = "https://finnhub.io/api/v1";
 const FINNHUB_TOKEN = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
 
-const TIMEOUT_MS = 800;
+const TIMEOUT_MS = 500;
 
 export interface MarketData {
   symbol: string;
@@ -48,25 +49,34 @@ async function withTimeout<T>(
 export async function getFinnhubQuote(symbol: string) {
   if (!FINNHUB_TOKEN) return null;
 
+  const cacheKey = getCacheKey("finnhub_quote", { symbol });
+
   try {
-    const url = `${FINNHUB_BASE_URL}/quote?symbol=${symbol}&token=${FINNHUB_TOKEN}`;
-    const data = await withTimeout(
-      fetchJSON<any>(url),
-      TIMEOUT_MS,
-      null
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const url = `${FINNHUB_BASE_URL}/quote?symbol=${symbol}&token=${FINNHUB_TOKEN}`;
+        const data = await withTimeout(
+          fetchJSON<any>(url),
+          TIMEOUT_MS,
+          null
+        );
+
+        if (!data || !data.c) return null;
+
+        return {
+          current: data.c,
+          change: data.d,
+          changePercent: data.dp,
+          high: data.h,
+          low: data.l,
+          open: data.o,
+          prevClose: data.pc,
+        };
+      },
+      getTTL("finnhubQuote"),
+      true
     );
-
-    if (!data || !data.c) return null;
-
-    return {
-      current: data.c,
-      change: data.d,
-      changePercent: data.dp,
-      high: data.h,
-      low: data.l,
-      open: data.o,
-      prevClose: data.pc,
-    };
   } catch (error) {
     console.error("Finnhub quote error:", error);
     return null;
@@ -76,9 +86,18 @@ export async function getFinnhubQuote(symbol: string) {
 export async function getStockProfile(symbol: string) {
   if (!FINNHUB_TOKEN) return null;
 
+  const cacheKey = getCacheKey("finnhub_profile", { symbol });
+
   try {
-    const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${symbol}&token=${FINNHUB_TOKEN}`;
-    return await withTimeout(fetchJSON<any>(url, 3600), TIMEOUT_MS, null);
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const url = `${FINNHUB_BASE_URL}/stock/profile2?symbol=${symbol}&token=${FINNHUB_TOKEN}`;
+        return await withTimeout(fetchJSON<any>(url, 3600), TIMEOUT_MS, null);
+      },
+      getTTL("finnhubProfile"),
+      false
+    );
   } catch {
     return null;
   }
@@ -87,9 +106,18 @@ export async function getStockProfile(symbol: string) {
 export async function getStockMetrics(symbol: string) {
   if (!FINNHUB_TOKEN) return null;
 
+  const cacheKey = getCacheKey("finnhub_metrics", { symbol });
+
   try {
-    const url = `${FINNHUB_BASE_URL}/stock/metric?symbol=${symbol}&metric=all&token=${FINNHUB_TOKEN}`;
-    return await withTimeout(fetchJSON<any>(url, 1800), TIMEOUT_MS, null);
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const url = `${FINNHUB_BASE_URL}/stock/metric?symbol=${symbol}&metric=all&token=${FINNHUB_TOKEN}`;
+        return await withTimeout(fetchJSON<any>(url, 1800), TIMEOUT_MS, null);
+      },
+      getTTL("finnhubMetrics"),
+      false
+    );
   } catch {
     return null;
   }
@@ -98,19 +126,28 @@ export async function getStockMetrics(symbol: string) {
 export async function getCompanyNews(symbol: string, daysBack: number = 7) {
   if (!FINNHUB_TOKEN) return [];
 
-  try {
-    const range = getDateRange(daysBack);
-    const url = `${FINNHUB_BASE_URL}/company-news?symbol=${symbol}&from=${range.from}&to=${range.to}&token=${FINNHUB_TOKEN}`;
-    const news = await withTimeout(fetchJSON<any[]>(url, 300), TIMEOUT_MS, []);
+  const cacheKey = getCacheKey("company_news", { symbol, daysBack });
 
-    return (news || [])
-      .slice(0, 10)
-      .map((n: any) => ({
-        headline: n.headline,
-        summary: n.summary,
-        datetime: n.datetime,
-        source: n.source,
-      }));
+  try {
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const range = getDateRange(daysBack);
+        const url = `${FINNHUB_BASE_URL}/company-news?symbol=${symbol}&from=${range.from}&to=${range.to}&token=${FINNHUB_TOKEN}`;
+        const news = await withTimeout(fetchJSON<any[]>(url, 300), 600, []);
+
+        return (news || [])
+          .slice(0, 10)
+          .map((n: any) => ({
+            headline: n.headline,
+            summary: n.summary,
+            datetime: n.datetime,
+            source: n.source,
+          }));
+      },
+      getTTL("news"),
+      true
+    );
   } catch {
     return [];
   }
@@ -119,18 +156,27 @@ export async function getCompanyNews(symbol: string, daysBack: number = 7) {
 export async function getGeneralNews() {
   if (!FINNHUB_TOKEN) return [];
 
-  try {
-    const url = `${FINNHUB_BASE_URL}/news?category=general&token=${FINNHUB_TOKEN}`;
-    const news = await withTimeout(fetchJSON<any[]>(url, 300), TIMEOUT_MS, []);
+  const cacheKey = getCacheKey("general_news", {});
 
-    return (news || [])
-      .slice(0, 10)
-      .map((n: any) => ({
-        headline: n.headline,
-        summary: n.summary,
-        datetime: n.datetime,
-        source: n.source,
-      }));
+  try {
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const url = `${FINNHUB_BASE_URL}/news?category=general&token=${FINNHUB_TOKEN}`;
+        const news = await withTimeout(fetchJSON<any[]>(url, 300), 600, []);
+
+        return (news || [])
+          .slice(0, 10)
+          .map((n: any) => ({
+            headline: n.headline,
+            summary: n.summary,
+            datetime: n.datetime,
+            source: n.source,
+          }));
+      },
+      getTTL("news"),
+      true
+    );
   } catch {
     return [];
   }

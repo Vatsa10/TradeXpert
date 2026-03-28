@@ -4,7 +4,7 @@ import { NORMAL_MODE_SYSTEM_PROMPT, GUARDRAIL_PROMPT } from "../prompts";
 import { getFinnhubQuote, extractSymbolFromQuery } from "../aggregator";
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   maxOutputTokens: 2048,
 }) as any;

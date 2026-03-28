@@ -2,17 +2,20 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { Mode, LLMResponse, QueryContext, Trend, Advice, DataQuality, Source, SignalBundle } from "./types";
 import { assessDataQuality } from "./context-builder";
 import { calibrateConfidence, getDataQuality } from "./confidence";
+import { withRateLimit, setCooldown } from "./rate-limiter";
 
 const fastLLM = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3-flash-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  maxOutputTokens: 2048,
+  maxOutputTokens: 1024,
+  temperature: 0.3,
 }) as any;
 
 const proLLM = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-pro",
+  model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  maxOutputTokens: 4096,
+  maxOutputTokens: 2048,
+  temperature: 0.3,
 }) as any;
 
 const OUTPUT_SCHEMA = `
@@ -48,6 +51,26 @@ function getSystemPrompt(mode: Mode, currentDate: string): string {
 function buildContextPrompt(context: QueryContext): string {
   let prompt = "";
 
+  const multiStockData = (context as any).multiStockData;
+  if (multiStockData && Object.keys(multiStockData).length > 1) {
+    prompt += `### STOCK COMPARISON\n`;
+    for (const [symbol, data] of Object.entries(multiStockData) as [string, any][]) {
+      prompt += `\n## ${symbol}\n`;
+      if (data.price) {
+        prompt += `Price: $${data.price.current} (${data.price.changePercent.toFixed(2)}%)\n`;
+      }
+      if (data.metrics) {
+        prompt += `P/E: ${data.metrics.pe_ratio?.toFixed(1) || "N/A"} | `;
+        prompt += `Market Cap: $${((data.metrics.market_cap || 0) / 1e9).toFixed(1)}B | `;
+        prompt += `Revenue Growth: ${data.metrics.revenue_growth?.toFixed(1) || "N/A"}%\n`;
+      }
+      if (data.news && data.news.length > 0) {
+        prompt += `Top News: ${data.news[0].headline.substring(0, 80)}...\n`;
+      }
+    }
+    return prompt;
+  }
+
   if (context.priceData) {
     prompt += `
 ### PRICE DATA
@@ -81,14 +104,14 @@ ${context.technicalIndicators.sma20 ? `- SMA 20: $${context.technicalIndicators.
   if (context.news && context.news.length > 0) {
     prompt += `
 ### NEWS
-${context.news.slice(0, 5).map((n, i) => `${i + 1}. ${n.headline}`).join("\n")}
+${context.news.slice(0, 3).map((n, i) => `${i + 1}. ${n.headline.substring(0, 100)}`).join("\n")}
 `;
   }
 
   if (context.searchResults && context.searchResults.length > 0) {
     prompt += `
 ### SEARCH RESULTS
-${context.searchResults.slice(0, 3).map((r, i) => `${i + 1}. ${r.title}: ${r.content.substring(0, 200)}`).join("\n")}
+${context.searchResults.slice(0, 2).map((r, i) => `${i + 1}. ${r.title.substring(0, 80)}`).join("\n")}
 `;
   }
 
@@ -134,15 +157,15 @@ function parseJSONResponse(response: string): Partial<LLMResponse> | null {
   }
 }
 
-function createFallbackResponse(context: QueryContext): LLMResponse {
+function createFallbackResponse(context: QueryContext, customMessage?: string): LLMResponse {
   const hasData = context.priceData || context.news?.length || context.searchResults?.length;
 
   return {
-    summary: hasData 
-      ? "Analysis completed based on available market data." 
-      : "Insufficient data available for comprehensive analysis.",
+    summary: customMessage || (hasData
+      ? "Analysis completed based on available market data."
+      : "Insufficient data available for comprehensive analysis."),
     trend: "neutral" as Trend,
-    reasoning: ["Based on available data points"],
+    reasoning: hasData ? ["Based on available market data"] : ["No data available for analysis"],
     advice: "Hold" as Advice,
     confidence: 0.3,
     dataQuality: assessDataQuality(context),
@@ -166,8 +189,8 @@ export async function generateLLMResponse(
   const llm = mode === "pro" ? proLLM : fastLLM;
 
   const contextPrompt = buildContextPrompt(context);
-  const signalPrompt = signals 
-    ? `\n### SIGNALS\n${signals.signals.map(s => `- ${s.indicator}: ${s.signal} (${s.reasoning})`).join("\n")}\nOverall: ${signals.overallTrend}` 
+  const signalPrompt = signals
+    ? `\n### SIGNALS\n${signals.signals.map(s => `- ${s.indicator}: ${s.signal} (${s.reasoning})`).join("\n")}\nOverall: ${signals.overallTrend}`
     : "";
 
   const userPrompt = `
@@ -180,10 +203,23 @@ Provide your analysis as JSON following the schema above.
 `;
 
   try {
-    const response = await llm.invoke([
-      { role: "system", content: getSystemPrompt(mode, currentDate) },
-      { role: "user", content: userPrompt },
-    ]);
+    const llmCall = async () => {
+      return await llm.invoke([
+        { role: "system", content: getSystemPrompt(mode, currentDate) },
+        { role: "user", content: userPrompt },
+      ]);
+    };
+
+    let response;
+    try {
+      response = await withRateLimit("gemini", llmCall, true);
+    } catch (rateLimitError: any) {
+      console.warn("[Response] Rate limited, using fallback:", rateLimitError.message);
+      const fallback = createFallbackResponse(context, "Rate limited. Please try again in a moment.");
+      fallback.confidence = calibrateConfidence(0.2, context, context.intent);
+      fallback.dataQuality = getDataQuality(context);
+      return fallback;
+    }
 
     const content = typeof response === "string" ? response : response.content;
     const parsed = parseJSONResponse(content);
@@ -212,8 +248,17 @@ Provide your analysis as JSON following the schema above.
     fallback.confidence = calibrateConfidence(fallback.confidence, context, context.intent);
     fallback.dataQuality = getDataQuality(context);
     return fallback;
-  } catch (error) {
-    console.error("LLM response error:", error);
+  } catch (error: any) {
+    console.error("LLM response error:", error?.message || error);
+
+    if (error?.status === 429) {
+      setCooldown("gemini", 60000);
+      const fallback = createFallbackResponse(context, "API rate limit reached. Please wait a moment.");
+      fallback.confidence = 0.1;
+      fallback.dataQuality = "low";
+      return fallback;
+    }
+
     return createFallbackResponse(context);
   }
 }

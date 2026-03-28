@@ -92,11 +92,11 @@ export function classifyIntent(query: string): Intent {
 }
 
 export function extractEntity(query: string): Entity | null {
-  const symbolMatch = query.match(STOCK_PATTERN);
+  const symbols = extractAllSymbols(query);
   
-  if (symbolMatch) {
+  if (symbols.length > 0) {
     return {
-      symbol: symbolMatch[1],
+      symbol: symbols[0],
       type: "stock",
     };
   }
@@ -105,9 +105,11 @@ export function extractEntity(query: string): Entity | null {
     apple: "AAPL",
     microsoft: "MSFT",
     google: "GOOGL",
+    alphabet: "GOOGL",
     amazon: "AMZN",
     tesla: "TSLA",
     meta: "META",
+    facebook: "META",
     nvidia: "NVDA",
     netflix: "NFLX",
     jpmorgan: "JPM",
@@ -123,7 +125,17 @@ export function extractEntity(query: string): Entity | null {
     baba: "BABA",
     alibaba: "BABA",
     tencent: "TCEHY",
-    Tata: "TCS",
+    tata: "TCS",
+    "state bank of india": "SBIN",
+    tech: "QQQ",
+    nasdaq: "QQQ",
+    sp500: "SPY",
+    "s&p": "SPY",
+    dow: "DIA",
+    bitcoin: "BTC",
+    btc: "BTC",
+    ethereum: "ETH",
+    eth: "ETH",
   };
 
   const lowerQuery = query.toLowerCase();
@@ -139,6 +151,81 @@ export function extractEntity(query: string): Entity | null {
   }
 
   return null;
+}
+
+export function extractAllSymbols(query: string): string[] {
+  const symbols: string[] = [];
+  
+  const tickerSymbols = [
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "TSLA", "META", "NVDA", "NFLX",
+    "JPM", "V", "WMT", "DIS", "PYPL", "INTC", "AMD", "CRM", "ORCL", "ADBE",
+    "UBER", "LYFT", "SNAP", "PINS", "SQ", "SHOP", "ROKU", "DOCU", "ZM", "PLTR",
+    "COIN", "RBLX", "SNOW", "DDOG", "CRWD", "NET", "OKTA", "TWLO", "PENN",
+    "DISCA", "DISCK", "DISH", "CHWY", "COUP", "ZEN", "SPLK", "NOW", "TTD",
+    "IQ", "YY", "HUBS", "MDB", "TEAM", "NET", "OKTA", "ZEN", "COUP", "ZS",
+    "BRK", "BRK.A", "BRK.B", "RELIANCE", "TCS", "INFY", "WIPRO", "HDFCBANK",
+    "ICICIBANK", "SBIN", "BABA", "JD", "PDD", "TME", "BILI", "NIO", "XPEV", "LI",
+    "SPY", "QQQ", "DIA", "IWM", "BTC", "ETH", "SOL", "ADA", "DOT", "AVAX",
+  ];
+
+  const companyToSymbol: Record<string, string> = {
+    apple: "AAPL",
+    microsoft: "MSFT",
+    google: "GOOGL",
+    alphabet: "GOOGL",
+    amazon: "AMZN",
+    tesla: "TSLA",
+    meta: "META",
+    facebook: "META",
+    nvidia: "NVDA",
+    netflix: "NFLX",
+    jpmorgan: "JPM",
+    "jp": "JPM",
+    berkshire: "BRK",
+    reliance: "RELIANCE",
+    tcs: "TCS",
+    infosys: "INFY",
+    wipro: "WIPRO",
+    hdfc: "HDFCBANK",
+    icici: "ICICIBANK",
+    "state bank": "SBIN",
+    baba: "BABA",
+    alibaba: "BABA",
+    tencent: "TCEHY",
+    tata: "TCS",
+    "state bank of india": "SBIN",
+    tech: "QQQ",
+    nasdaq: "QQQ",
+    sp500: "SPY",
+    "s&p": "SPY",
+    dow: "DIA",
+    bitcoin: "BTC",
+    btc: "BTC",
+    ethereum: "ETH",
+    eth: "ETH",
+  };
+
+  const upperQuery = query.toUpperCase();
+  const lowerQuery = query.toLowerCase();
+  
+  for (const symbol of tickerSymbols) {
+    const pattern = new RegExp(`\\b${symbol}\\b`, 'g');
+    if (pattern.test(upperQuery)) {
+      if (!symbols.includes(symbol)) {
+        symbols.push(symbol);
+      }
+    }
+  }
+
+  for (const [company, symbol] of Object.entries(companyToSymbol)) {
+    if (lowerQuery.includes(company)) {
+      if (!symbols.includes(symbol)) {
+        symbols.push(symbol);
+      }
+    }
+  }
+
+  return symbols;
 }
 
 export function isStockRelated(query: string): boolean {

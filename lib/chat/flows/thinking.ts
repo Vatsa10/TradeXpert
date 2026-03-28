@@ -8,7 +8,7 @@ import { webSearch, formatSearchResults, needsMoreContext } from "../search";
 import { shouldUseSearch } from "../router";
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   maxOutputTokens: 2048,
 }) as any;
@@ -28,7 +28,7 @@ export async function thinkingFlow(query: string): Promise<FlowResult> {
   });
 
   const symbol = extractSymbolFromQuery(query);
-  
+
   if (!symbol) {
     return {
       content: "I couldn't detect a stock symbol in your query. Please include a valid stock ticker (e.g., AAPL, MSFT, TSLA).",

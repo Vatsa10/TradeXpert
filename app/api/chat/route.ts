@@ -172,3 +172,41 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    if (!authInstance) {
+      return NextResponse.json({ error: "Auth not initialized" }, { status: 500 });
+    }
+
+    const session = await authInstance.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get("sessionId");
+
+    if (!sessionId) {
+      return NextResponse.json({ error: "Session ID required" }, { status: 400 });
+    }
+
+    await connectToDatabase();
+
+    await ChatSession.findOneAndDelete({
+      _id: sessionId,
+      userEmail: session.user.email,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Chat delete error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete chat" },
+      { status: 500 }
+    );
+  }
+}

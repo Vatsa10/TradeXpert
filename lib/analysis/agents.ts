@@ -7,7 +7,7 @@ import {
   InvestmentReportSchema
 } from "./types";
 
-const model = "gemini-2.5-pro"; // Using 1.5 Pro for thorough analysis
+const model = "gemini-3.1-flash-lite-preview"; // Using 1.5 Pro for thorough analysis
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
 const llm = new ChatGoogleGenerativeAI({

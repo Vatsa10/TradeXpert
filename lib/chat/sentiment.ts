@@ -2,7 +2,7 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash",
+  model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   maxOutputTokens: 1024,
 }) as any;
@@ -79,9 +79,9 @@ Return a JSON object with:
   try {
     const response = await llm.invoke(prompt);
     const content = typeof response === "string" ? response : response.content;
-    
+
     const parsed = JSON.parse(content);
-    
+
     return {
       overallSentiment: parsed.sentiment || "neutral",
       confidence: parsed.confidence || 0.5,
@@ -91,10 +91,10 @@ Return a JSON object with:
   } catch (error) {
     console.error("Sentiment analysis error:", error);
     return {
-      overallSentiment: ruleBasedSignals.includes("geopolitical_risk") 
-        ? "bearish" 
-        : ruleBasedSignals.length > 0 
-          ? "bullish" 
+      overallSentiment: ruleBasedSignals.includes("geopolitical_risk")
+        ? "bearish"
+        : ruleBasedSignals.length > 0
+          ? "bullish"
           : "neutral",
       confidence: 0.5,
       macroSignals: ruleBasedSignals,

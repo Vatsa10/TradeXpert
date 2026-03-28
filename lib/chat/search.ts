@@ -1,10 +1,11 @@
 import { Mode } from "./router";
+import { getCacheKey, getOrFetch, getTTL } from "./cache";
 
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const EXA_API_KEY = process.env.EXA_API_KEY;
 
-const TIMEOUT_MS = 800;
-const MAX_RESULTS = 3;
+const TIMEOUT_MS = 3000;
+const MAX_RESULTS = 2;
 
 export interface SearchResult {
   title: string;
@@ -35,42 +36,51 @@ export async function tavilySearch(query: string, limit: number = MAX_RESULTS): 
     return [];
   }
 
+  const cacheKey = getCacheKey("tavily_search", { query, limit });
+
   try {
-    const response = await withTimeout(
-      fetch("https://api.tavily.com/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          api_key: TAVILY_API_KEY,
-          query,
-          search_depth: "basic",
-          max_results: limit,
-          include_answer: true,
-          include_raw_content: false,
-        }),
-      }),
-      TIMEOUT_MS
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const response = await withTimeout(
+          fetch("https://api.tavily.com/search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              api_key: TAVILY_API_KEY,
+              query,
+              search_depth: "basic",
+              max_results: limit,
+              include_answer: true,
+              include_raw_content: false,
+            }),
+          }),
+          TIMEOUT_MS
+        );
+
+        if (!response) {
+          console.warn("Tavily request timed out");
+          return [];
+        }
+
+        const data = await response.json();
+
+        if (!data.results || !Array.isArray(data.results)) {
+          return [];
+        }
+
+        return data.results.slice(0, limit).map((result: any) => ({
+          title: result.title || "No title",
+          url: result.url || "",
+          content: result.content || result.snippet || "",
+          source: "Tavily",
+        }));
+      },
+      getTTL("search"),
+      false
     );
-
-    if (!response) {
-      console.warn("Tavily request timed out");
-      return [];
-    }
-
-    const data = await response.json();
-
-    if (!data.results || !Array.isArray(data.results)) {
-      return [];
-    }
-
-    return data.results.slice(0, limit).map((result: any) => ({
-      title: result.title || "No title",
-      url: result.url || "",
-      content: result.content || result.snippet || "",
-      source: "Tavily",
-    }));
   } catch (error) {
     console.error("Tavily search error:", error);
     return [];
@@ -83,43 +93,52 @@ export async function exaSearch(query: string, limit: number = MAX_RESULTS): Pro
     return [];
   }
 
+  const cacheKey = getCacheKey("exa_search", { query, limit });
+
   try {
-    const response = await withTimeout(
-      fetch("https://api.exa.ai/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": EXA_API_KEY,
-        },
-        body: JSON.stringify({
-          query,
-          num_results: limit,
-          type: "auto",
-          highlights: {
-            num_sentences: 3,
-          },
-        }),
-      }),
-      TIMEOUT_MS
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const response = await withTimeout(
+          fetch("https://api.exa.ai/search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": EXA_API_KEY,
+            },
+            body: JSON.stringify({
+              query,
+              num_results: limit,
+              type: "auto",
+              highlights: {
+                num_sentences: 3,
+              },
+            }),
+          }),
+          TIMEOUT_MS
+        );
+
+        if (!response) {
+          console.warn("Exa request timed out");
+          return [];
+        }
+
+        const data = await response.json();
+
+        if (!data.results || !Array.isArray(data.results)) {
+          return [];
+        }
+
+        return data.results.slice(0, limit).map((result: any) => ({
+          title: result.title || "No title",
+          url: result.url || "",
+          content: result.highlight || result.summary || "",
+          source: "Exa",
+        }));
+      },
+      getTTL("search"),
+      false
     );
-
-    if (!response) {
-      console.warn("Exa request timed out");
-      return [];
-    }
-
-    const data = await response.json();
-
-    if (!data.results || !Array.isArray(data.results)) {
-      return [];
-    }
-
-    return data.results.slice(0, limit).map((result: any) => ({
-      title: result.title || "No title",
-      url: result.url || "",
-      content: result.highlight || result.summary || "",
-      source: "Exa",
-    }));
   } catch (error) {
     console.error("Exa search error:", error);
     return [];

@@ -129,9 +129,17 @@ export default function ChatPageClient() {
     }
   };
 
-  const clearChat = () => {
+  const clearChat = async () => {
+    if (sessionId) {
+      try {
+        await fetch(`/api/chat?sessionId=${sessionId}`, { method: "DELETE" });
+      } catch (error) {
+        console.error("Failed to delete chat:", error);
+      }
+    }
     setMessages([]);
     setSessionId(null);
+    fetchSessions();
   };
 
   const getModeIcon = (m: Mode) => {
@@ -166,20 +174,39 @@ export default function ChatPageClient() {
                 <p className="text-zinc-500 text-sm">No conversations yet</p>
               ) : (
                 sessions.map((s) => (
-                  <button
-                    key={s.sessionId}
-                    onClick={() => loadSession(s.sessionId)}
-                    className={`w-full text-left p-2 rounded-lg transition-colors ${
-                      sessionId === s.sessionId
-                        ? "bg-zinc-800 text-white"
-                        : "hover:bg-zinc-800/50 text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4 shrink-0" />
-                      <span className="text-sm truncate">{s.title}</span>
-                    </div>
-                  </button>
+                  <div key={s.sessionId} className="flex items-center group">
+                    <button
+                      onClick={() => loadSession(s.sessionId)}
+                      className={`flex-1 text-left p-2 rounded-lg transition-colors ${
+                        sessionId === s.sessionId
+                          ? "bg-zinc-800 text-white"
+                          : "hover:bg-zinc-800/50 text-zinc-400 hover:text-white"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 shrink-0" />
+                        <span className="text-sm truncate">{s.title}</span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await fetch(`/api/chat?sessionId=${s.sessionId}`, { method: "DELETE" });
+                          fetchSessions();
+                          if (sessionId === s.sessionId) {
+                            setMessages([]);
+                            setSessionId(null);
+                          }
+                        } catch (error) {
+                          console.error("Failed to delete chat:", error);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ))
               )}
             </div>

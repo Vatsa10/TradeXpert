@@ -159,7 +159,9 @@ export async function buildContext(
     tasks.push(webSearch(query, mode));
   }
 
-  if (mode === "pro") {
+  const needsIndicators = mode === "pro" && entity?.symbol && intent !== "price";
+  
+  if (needsIndicators) {
     tasks.push(getTechnicalIndicators(entity.symbol));
   }
 
@@ -178,7 +180,7 @@ export async function buildContext(
   }
 
   const indicatorIndex = baseTaskCount + (hasSearch ? 1 : 0);
-  if (mode === "pro" && indicatorIndex < results.length) {
+  if (needsIndicators && indicatorIndex < results.length) {
     const indicatorsResult = results[indicatorIndex];
     if (indicatorsResult.status === "fulfilled") {
       const indicators = indicatorsResult.value;
@@ -227,4 +229,74 @@ export function assessDataQuality(context: Partial<QueryContext>): "high" | "med
   if (score >= 6) return "high";
   if (score >= 3) return "medium";
   return "low";
+}
+
+export async function buildMultiStockContext(
+  query: string,
+  intent: Intent,
+  symbols: string[],
+  mode: Mode
+): Promise<Partial<QueryContext>> {
+  const context: Partial<QueryContext> = {
+    query,
+    intent,
+    entity: { symbol: symbols[0], type: "stock" },
+    mode,
+    timestamp: new Date(),
+    priceData: null,
+    metrics: null,
+    news: [],
+  };
+
+  const pricePromises = symbols.map(s => getFinnhubQuote(s));
+  const newsPromises = symbols.map(s => getCompanyNews(s, 7));
+  const metricsPromises = symbols.map(s => getStockMetrics(s));
+  
+  const [prices, newsResults, metricsResults] = await Promise.all([
+    Promise.allSettled(pricePromises),
+    Promise.allSettled(newsPromises),
+    Promise.allSettled(metricsPromises)
+  ]);
+
+  const stockData: Record<string, { price?: any; metrics?: any; news?: any[] }> = {};
+  const allNews: any[] = [];
+  
+  for (let i = 0; i < symbols.length; i++) {
+    const symbol = symbols[i];
+    stockData[symbol] = {};
+    
+    const priceResult = prices[i];
+    const newsResult = newsResults[i];
+    const metricsResult = metricsResults[i];
+    
+    if (priceResult.status === "fulfilled" && priceResult.value) {
+      stockData[symbol].price = priceResult.value;
+      if (i === 0) context.priceData = priceResult.value;
+    }
+    
+    if (metricsResult.status === "fulfilled" && metricsResult.value) {
+      stockData[symbol].metrics = metricsResult.value;
+      if (i === 0) context.metrics = metricsResult.value;
+    }
+    
+    if (newsResult.status === "fulfilled" && newsResult.value) {
+      stockData[symbol].news = newsResult.value;
+      allNews.push(...newsResult.value);
+    }
+  }
+
+  (context as any).multiStockData = stockData;
+  context.news = allNews.slice(0, 10);
+
+  if (mode === "pro" || intent === "macro") {
+    const searchResults = await webSearch(query, mode);
+    context.searchResults = searchResults;
+  }
+
+  if (allNews.length > 0) {
+    const headlines = allNews.map((n: any) => n.headline);
+    context.sentiment = await analyzeSentiment(headlines);
+  }
+
+  return context;
 }

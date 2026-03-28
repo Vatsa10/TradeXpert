@@ -7,7 +7,7 @@ import { buildSignals, SignalBundle } from "../signals";
 import { webSearch, formatSearchResults } from "../search";
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-pro",
+  model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   maxOutputTokens: 4096,
 }) as any;

@@ -1,10 +1,12 @@
 import { Mode, Intent, FlowResult, QueryContext, ExecutionMetrics } from "./types";
-import { classifyIntent, extractEntity, isStockRelated } from "./intent";
-import { buildContext, isDataSufficient } from "./context-builder";
+import { classifyIntent, extractEntity, extractAllSymbols, isStockRelated } from "./intent";
+import { buildContext, isDataSufficient, buildMultiStockContext } from "./context-builder";
 import { detectEvents } from "./events";
 import { buildSignals } from "./signals";
 import { webSearch } from "./search";
 import { generateLLMResponse, transformForMarkdown } from "./response";
+import { shouldEarlyExit, getStepsToSkip, isWithinBudget, getRemainingBudget } from "./early-exit";
+import { clearRequestCache } from "./cache";
 
 function resolveMode(
   query: string,
@@ -15,12 +17,16 @@ function resolveMode(
   if (userMode === "pro") return "pro";
   if (userMode === "thinking") return "thinking";
 
-  if (entity?.symbol || intent === "price" || intent === "reason") {
+  if (intent === "macro" || intent === "comparison") {
+    return "pro";
+  }
+
+  if (entity?.symbol && (intent === "price" || intent === "reason")) {
     return "thinking";
   }
 
-  if (intent === "macro" || intent === "comparison") {
-    return "pro";
+  if (entity?.symbol) {
+    return "thinking";
   }
 
   return "normal";
@@ -51,16 +57,36 @@ export async function orchestrateQuery(
   userMode?: Mode
 ): Promise<FlowResult> {
   const startTime = Date.now();
+  clearRequestCache();
 
   const intent = classifyIntent(query);
+  const allSymbols = extractAllSymbols(query);
   const entity = extractEntity(query);
   const mode = resolveMode(query, userMode, intent, entity);
 
-  console.log(`[Orchestrator] Query: "${query.substring(0, 50)}..." | Intent: ${intent} | Mode: ${mode}`);
+  console.log(`[Orchestrator] Query: "${query.substring(0, 50)}..." | Intent: ${intent} | Mode: ${mode} | Symbols: ${JSON.stringify(allSymbols)}`);
 
-  let context = await buildContext(query, intent, entity, mode);
+  const earlyExit = shouldEarlyExit(query, {}, intent);
+  
+  console.log(`[Orchestrator] Early exit: ${earlyExit.shouldExit}, Reason: ${earlyExit.reason || "none"}`);
 
-  if (!isDataSufficient(context, intent)) {
+  let context;
+  if (allSymbols.length > 1) {
+    console.log(`[Orchestrator] Multiple stocks detected, building multi-stock context`);
+    context = await buildMultiStockContext(query, intent, allSymbols, mode);
+  } else {
+    context = await buildContext(query, intent, entity, mode);
+  }
+  
+  const multiStockData = (context as any).multiStockData;
+  const stockCount = multiStockData ? Object.keys(multiStockData).length : 0;
+  console.log(`[Orchestrator] Context built - stocks: ${stockCount}, priceData: ${!!context.priceData}, metrics: ${!!context.metrics}, news: ${context.news?.length}, search: ${context.searchResults?.length}`);
+
+  if (!isWithinBudget(startTime)) {
+    console.log(`[Orchestrator] Execution budget exceeded, skipping expensive steps`);
+  }
+
+  if (!isDataSufficient(context, intent) && isWithinBudget(startTime)) {
     console.log(`[Orchestrator] Insufficient data - adding web search`);
     const searchResults = await webSearch(query, mode);
     context = {

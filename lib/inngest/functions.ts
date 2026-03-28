@@ -37,7 +37,7 @@ export const sendSignUpEmail = inngest.createFunction(
     );
 
     const response = await step.ai.infer("generate-welcome-intro", {
-      model: step.ai.models.gemini({ model: "gemini-2.0-flash" }),
+      model: step.ai.models.gemini({ model: "gemini-3.1-flash-lite-preview" }),
       body: {
         contents: [
           {
@@ -116,7 +116,7 @@ export const sendDailyNewsSummary = inngest.createFunction(
         );
 
         const response = await step.ai.infer(`summarize-news-${user.email}`, {
-          model: step.ai.models.gemini({ model: "gemini-2.0-flash" }),
+          model: step.ai.models.gemini({ model: "gemini-3.1-flash-lite-preview" }),
           body: {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
           },
@@ -172,10 +172,10 @@ export const runStockAnalysis = inngest.createFunction(
       const { stockData, newsData } = await step.run("fetch-data", async () => {
         // Get the rich "TradingView-style" context from Finnhub
         const richContext = await getAIAnalysisContext(symbol);
-        
+
         // Fallback/Supplemental news if needed (optional, richContext already has some)
         const news = await getRecentNews(companyName);
-        
+
         return { stockData: richContext, newsData: news };
       });
 
@@ -211,20 +211,20 @@ export const runStockAnalysis = inngest.createFunction(
       return { success: true, requestId };
     } catch (error: any) {
       console.error("Inngest Analysis Error:", error);
-      
+
       // Update MongoDB to reflect the error status
       await step.run("mark-as-failed", async () => {
         await connectToDatabase();
         await AnalysisRequest.findOneAndUpdate(
           { requestId },
-          { 
-            status: "error", 
+          {
+            status: "error",
             error: error.message || "Unknown error during AI synthesis",
-            updatedAt: new Date() 
+            updatedAt: new Date()
           }
         );
       });
-      
+
       throw error; // Re-throw for Inngest retry logic
     }
   }
