@@ -33,6 +33,8 @@ CRITICAL RULES:
 - Only use provided data
 - Do not fabricate numbers or events
 - If data missing, say "Insufficient data" in summary
+- For comparison queries, explicitly compare both assets using available numeric fields
+- Mention data gaps per asset instead of generic "missing data"
 - confidence must be 0.0-1.0 (float)
 - trend must be exactly "bullish", "bearish", or "neutral"
 - advice must be exactly "Buy", "Hold", "Sell", or "Wait"
@@ -51,7 +53,7 @@ function getSystemPrompt(mode: Mode, currentDate: string): string {
 function buildContextPrompt(context: QueryContext): string {
   let prompt = "";
 
-  const multiStockData = (context as any).multiStockData;
+  const multiStockData = context.multiStockData;
   if (multiStockData && Object.keys(multiStockData).length > 1) {
     prompt += `### STOCK COMPARISON\n`;
     for (const [symbol, data] of Object.entries(multiStockData) as [string, any][]) {
@@ -60,15 +62,15 @@ function buildContextPrompt(context: QueryContext): string {
         prompt += `Price: $${data.price.current} (${data.price.changePercent.toFixed(2)}%)\n`;
       }
       if (data.metrics) {
-        prompt += `P/E: ${data.metrics.pe_ratio?.toFixed(1) || "N/A"} | `;
-        prompt += `Market Cap: $${((data.metrics.market_cap || 0) / 1e9).toFixed(1)}B | `;
-        prompt += `Revenue Growth: ${data.metrics.revenue_growth?.toFixed(1) || "N/A"}%\n`;
+        const pe = typeof data.metrics.pe_ratio === "number" ? data.metrics.pe_ratio.toFixed(1) : "N/A";
+        const marketCap = typeof data.metrics.market_cap === "number" ? `$${(data.metrics.market_cap / 1e9).toFixed(1)}B` : "N/A";
+        const growth = typeof data.metrics.revenue_growth === "number" ? `${data.metrics.revenue_growth.toFixed(1)}%` : "N/A";
+        prompt += `P/E: ${pe} | Market Cap: ${marketCap} | Revenue Growth: ${growth}\n`;
       }
       if (data.news && data.news.length > 0) {
         prompt += `Top News: ${data.news[0].headline.substring(0, 80)}...\n`;
       }
     }
-    return prompt;
   }
 
   if (context.priceData) {
@@ -198,6 +200,11 @@ Query: ${query}
 
 ${contextPrompt}
 ${signalPrompt}
+
+Grounding requirements:
+- Use exact numbers from the context when available
+- If quoting a move, include the symbol and percentage
+- For two-stock comparison, provide at least one point for each stock
 
 Provide your analysis as JSON following the schema above.
 `;

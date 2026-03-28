@@ -102,6 +102,11 @@ export interface QueryContext {
   technicalIndicators?: TechnicalIndicatorsData | null;
   portfolio?: WatchlistItem[];
   events?: string[];
+  multiStockData?: Record<string, {
+    price?: PriceData | null;
+    metrics?: FinancialMetrics | null;
+    news?: NewsItem[];
+  }>;
   timestamp: Date;
 }
 

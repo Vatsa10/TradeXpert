@@ -1,11 +1,53 @@
-import { Mode, Intent, QueryContext, PriceData, FinancialMetrics, CompanyProfile, NewsItem, SearchResult, SentimentResult } from "./types";
-import { extractEntity } from "./intent";
+import { Mode, Intent, QueryContext, PriceData, FinancialMetrics, CompanyProfile, NewsItem, SearchResult } from "./types";
 import { getFinnhubQuote, getStockProfile, getStockMetrics, getCompanyNews, getGeneralNews } from "./aggregator";
 import { webSearch } from "./search";
 import { analyzeSentiment } from "./sentiment";
 import { getTechnicalIndicators } from "./indicators";
+import { runPriorityQueue, QueuedTask } from "./queue";
 
-const TIMEOUT_MS = 800;
+const TIMEOUT_MS = 1200;
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function normalizeMetrics(raw: any): FinancialMetrics | null {
+  if (!raw) return null;
+  const metric = raw.metric ?? raw;
+  if (!metric || typeof metric !== "object") return null;
+
+  const pe = toNumber(metric.peTTM ?? metric.peNormalizedAnnual ?? metric.peBasicExclExtraTTM ?? metric.PERatio);
+  const pb = toNumber(metric.pbAnnual ?? metric.pbQuarterly ?? metric.PriceToBookRatio);
+  const marketCap = toNumber(metric.marketCapitalization ?? metric.MarketCapitalization);
+  const revenueGrowth = toNumber(
+    metric.revenueGrowthTTMYoy ?? metric.revenueGrowth3Y ?? metric.revenueGrowth5Y ?? metric.QuarterlyRevenueGrowthYOY
+  );
+  const debtToEquity = toNumber(metric.totalDebtToEquityQuarterly ?? metric.totalDebtToEquityAnnual ?? metric.DebtToEquity);
+  const dividendYield = toNumber(metric.dividendYieldIndicatedAnnual ?? metric.currentDividendYieldTTM ?? metric.DividendYield);
+  const eps = toNumber(metric.epsTTM ?? metric.epsBasicExclExtraItemsAnnual ?? metric.DilutedEPSTTM ?? metric.EPS);
+  const high52 = toNumber(metric["52WeekHigh"] ?? metric.WeekHigh52);
+  const low52 = toNumber(metric["52WeekLow"] ?? metric.WeekLow52);
+
+  const normalized: FinancialMetrics = {
+    pe_ratio: pe,
+    pb_ratio: pb,
+    debt_to_equity: debtToEquity,
+    dividend_yield: dividendYield,
+    revenue_growth: revenueGrowth,
+    eps,
+    market_cap: marketCap,
+    fifty_two_week_high: high52,
+    fifty_two_week_low: low52,
+  };
+
+  const hasAnyValue = Object.values(normalized).some((v) => v !== undefined && v !== null);
+  return hasAnyValue ? normalized : null;
+}
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   try {
@@ -92,7 +134,7 @@ async function fetchMetrics(symbol: string): Promise<FinancialMetrics | null> {
       getStockMetrics(symbol),
       TIMEOUT_MS
     );
-    return data;
+    return normalizeMetrics(data);
   } catch {
     return null;
   }
@@ -144,59 +186,84 @@ export async function buildContext(
       ]);
       context.news = news;
       context.searchResults = searchResults;
+      if (news.length > 0) {
+        context.sentiment = await analyzeSentiment(news.map((n) => n.headline));
+      }
     }
     return context;
   }
 
-  const tasks: Promise<any>[] = [
-    fetchPriceData(entity.symbol),
-    fetchProfile(entity.symbol),
-    fetchMetrics(entity.symbol),
-    fetchCompanyNews(entity.symbol),
+  const needsSearch = shouldUseWebSearch(intent, mode, !!entity.symbol);
+  const needsIndicators = mode === "pro" && intent !== "price";
+
+  const tasks: QueuedTask<unknown>[] = [
+    {
+      id: "price",
+      priority: 1,
+      timeoutMs: 1300,
+      task: () => fetchPriceData(entity.symbol!),
+    },
+    {
+      id: "profile",
+      priority: 2,
+      timeoutMs: 1500,
+      task: () => fetchProfile(entity.symbol!),
+    },
+    {
+      id: "metrics",
+      priority: 2,
+      timeoutMs: 1500,
+      task: () => fetchMetrics(entity.symbol!),
+    },
+    {
+      id: "news",
+      priority: 2,
+      timeoutMs: 1800,
+      task: () => fetchCompanyNews(entity.symbol!),
+    },
   ];
 
-  if (shouldUseWebSearch(intent, mode, !!entity.symbol)) {
-    tasks.push(webSearch(query, mode));
+  if (needsSearch) {
+    tasks.push({
+      id: "search",
+      priority: 3,
+      timeoutMs: 3500,
+      task: () => webSearch(query, mode),
+    });
   }
 
-  const needsIndicators = mode === "pro" && entity?.symbol && intent !== "price";
-  
   if (needsIndicators) {
-    tasks.push(getTechnicalIndicators(entity.symbol));
+    tasks.push({
+      id: "indicators",
+      priority: 3,
+      timeoutMs: 2500,
+      task: () => getTechnicalIndicators(entity.symbol!),
+    });
   }
 
-  const results = await Promise.allSettled(tasks);
+  const { results } = await runPriorityQueue(tasks, {
+    concurrency: 4,
+    stageTimeoutMs: { 1: 2500, 2: 5000, 3: 7000 },
+  });
 
-  context.priceData = results[0].status === "fulfilled" ? results[0].value as PriceData : null;
-  context.profile = results[1].status === "fulfilled" ? results[1].value as CompanyProfile : null;
-  context.metrics = results[2].status === "fulfilled" ? results[2].value as FinancialMetrics : null;
-  context.news = results[3].status === "fulfilled" ? results[3].value as NewsItem[] : [];
+  context.priceData = (results.price as PriceData | null) || null;
+  context.profile = (results.profile as CompanyProfile | null) || null;
+  context.metrics = (results.metrics as FinancialMetrics | null) || null;
+  context.news = (results.news as NewsItem[] | undefined) || [];
+  context.searchResults = (results.search as SearchResult[] | undefined) || [];
 
-  const baseTaskCount = 4;
-  const hasSearch = shouldUseWebSearch(intent, mode, !!entity.symbol);
-  
-  if (hasSearch) {
-    context.searchResults = results[4].status === "fulfilled" ? results[4].value as SearchResult[] : [];
+  const indicators = results.indicators as any;
+  if (indicators) {
+    context.technicalIndicators = {
+      rsi: indicators.rsi ? { value: indicators.rsi.value || null, signal: indicators.rsi.signal } : undefined,
+      macd: indicators.macd ? { histogram: (indicators.macd.value as number) || 0, signal: indicators.macd.signal } : undefined,
+      adx: indicators.adx ? { value: indicators.adx.value || null, signal: indicators.adx.signal } : undefined,
+      sma20: (indicators.sma20?.value as number) || undefined,
+    };
   }
 
-  const indicatorIndex = baseTaskCount + (hasSearch ? 1 : 0);
-  if (needsIndicators && indicatorIndex < results.length) {
-    const indicatorsResult = results[indicatorIndex];
-    if (indicatorsResult.status === "fulfilled") {
-      const indicators = indicatorsResult.value;
-      if (indicators) {
-        context.technicalIndicators = {
-          rsi: indicators.rsi ? { value: indicators.rsi.value || null, signal: indicators.rsi.signal } : undefined,
-          macd: indicators.macd ? { histogram: (indicators.macd.value as number) || 0, signal: indicators.macd.signal } : undefined,
-          adx: indicators.adx ? { value: indicators.adx.value || null, signal: indicators.adx.signal } : undefined,
-          sma20: indicators.sma20?.value as number || undefined,
-        };
-      }
-    }
-  }
-
-  if (context.news && context.news.length > 0) {
-    const headlines = context.news.map((n) => n.headline);
+  const headlines = context.news.map((n) => n.headline).slice(0, 12);
+  if (headlines.length > 0) {
     context.sentiment = await analyzeSentiment(headlines);
   }
 
@@ -248,54 +315,69 @@ export async function buildMultiStockContext(
     news: [],
   };
 
-  const pricePromises = symbols.map(s => getFinnhubQuote(s));
-  const newsPromises = symbols.map(s => getCompanyNews(s, 7));
-  const metricsPromises = symbols.map(s => getStockMetrics(s));
-  
-  const [prices, newsResults, metricsResults] = await Promise.all([
-    Promise.allSettled(pricePromises),
-    Promise.allSettled(newsPromises),
-    Promise.allSettled(metricsPromises)
-  ]);
+  const stockData: Record<string, { price?: PriceData | null; metrics?: FinancialMetrics | null; news?: NewsItem[] }> = {};
+  const tasks: QueuedTask<unknown>[] = [];
 
-  const stockData: Record<string, { price?: any; metrics?: any; news?: any[] }> = {};
-  const allNews: any[] = [];
-  
-  for (let i = 0; i < symbols.length; i++) {
-    const symbol = symbols[i];
+  for (const symbol of symbols) {
     stockData[symbol] = {};
-    
-    const priceResult = prices[i];
-    const newsResult = newsResults[i];
-    const metricsResult = metricsResults[i];
-    
-    if (priceResult.status === "fulfilled" && priceResult.value) {
-      stockData[symbol].price = priceResult.value;
-      if (i === 0) context.priceData = priceResult.value;
-    }
-    
-    if (metricsResult.status === "fulfilled" && metricsResult.value) {
-      stockData[symbol].metrics = metricsResult.value;
-      if (i === 0) context.metrics = metricsResult.value;
-    }
-    
-    if (newsResult.status === "fulfilled" && newsResult.value) {
-      stockData[symbol].news = newsResult.value;
-      allNews.push(...newsResult.value);
-    }
+    tasks.push({
+      id: `price:${symbol}`,
+      priority: 1,
+      timeoutMs: 1300,
+      task: () => fetchPriceData(symbol),
+    });
+    tasks.push({
+      id: `metrics:${symbol}`,
+      priority: 2,
+      timeoutMs: 1800,
+      task: () => fetchMetrics(symbol),
+    });
+    tasks.push({
+      id: `news:${symbol}`,
+      priority: 2,
+      timeoutMs: 2200,
+      task: () => fetchCompanyNews(symbol),
+    });
   }
 
-  (context as any).multiStockData = stockData;
-  context.news = allNews.slice(0, 10);
+  tasks.push({
+    id: "search",
+    priority: 3,
+    timeoutMs: 4000,
+    task: () => (mode === "pro" || intent === "macro" || intent === "comparison" ? webSearch(query, mode) : Promise.resolve([])),
+  });
 
-  if (mode === "pro" || intent === "macro") {
-    const searchResults = await webSearch(query, mode);
-    context.searchResults = searchResults;
-  }
+  const { results, errors } = await runPriorityQueue(tasks, {
+    concurrency: 5,
+    stageTimeoutMs: { 1: 3000, 2: 6000, 3: 5000 },
+  });
 
-  if (allNews.length > 0) {
-    const headlines = allNews.map((n: any) => n.headline);
-    context.sentiment = await analyzeSentiment(headlines);
+  const allNews: NewsItem[] = [];
+
+  symbols.forEach((symbol, index) => {
+    const price = (results[`price:${symbol}`] as PriceData | null) || null;
+    const metrics = (results[`metrics:${symbol}`] as FinancialMetrics | null) || null;
+    const news = (results[`news:${symbol}`] as NewsItem[] | undefined) || [];
+
+    stockData[symbol] = { price, metrics, news };
+
+    if (index === 0) {
+      context.priceData = price;
+      context.metrics = metrics;
+    }
+
+    allNews.push(...news);
+  });
+
+  context.news = allNews.slice(0, 14);
+  context.searchResults = (results.search as SearchResult[] | undefined) || [];
+  context.multiStockData = stockData;
+
+  const headlines = allNews.map((n) => n.headline).slice(0, 18);
+  context.sentiment = await analyzeSentiment(headlines);
+
+  if (Object.keys(errors).length > 0) {
+    console.warn("[ContextBuilder] Queue task errors:", errors);
   }
 
   return context;

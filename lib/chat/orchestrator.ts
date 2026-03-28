@@ -5,7 +5,7 @@ import { detectEvents } from "./events";
 import { buildSignals } from "./signals";
 import { webSearch } from "./search";
 import { generateLLMResponse, transformForMarkdown } from "./response";
-import { shouldEarlyExit, getStepsToSkip, isWithinBudget, getRemainingBudget } from "./early-exit";
+import { shouldEarlyExit, isWithinBudget } from "./early-exit";
 import { clearRequestCache } from "./cache";
 
 function resolveMode(
@@ -78,7 +78,7 @@ export async function orchestrateQuery(
     context = await buildContext(query, intent, entity, mode);
   }
   
-  const multiStockData = (context as any).multiStockData;
+  const multiStockData = context.multiStockData;
   const stockCount = multiStockData ? Object.keys(multiStockData).length : 0;
   console.log(`[Orchestrator] Context built - stocks: ${stockCount}, priceData: ${!!context.priceData}, metrics: ${!!context.metrics}, news: ${context.news?.length}, search: ${context.searchResults?.length}`);
 

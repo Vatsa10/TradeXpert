@@ -4,7 +4,7 @@ import { getCacheKey, getOrFetch, getTTL } from "./cache";
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const EXA_API_KEY = process.env.EXA_API_KEY;
 
-const TIMEOUT_MS = 3000;
+const TIMEOUT_MS = 3500;
 const MAX_RESULTS = 2;
 
 export interface SearchResult {
@@ -51,9 +51,10 @@ export async function tavilySearch(query: string, limit: number = MAX_RESULTS): 
             body: JSON.stringify({
               api_key: TAVILY_API_KEY,
               query,
-              search_depth: "basic",
+              search_depth: "ultra-fast",
+              topic: "finance",
               max_results: limit,
-              include_answer: true,
+              include_answer: false,
               include_raw_content: false,
             }),
           }),
@@ -108,10 +109,13 @@ export async function exaSearch(query: string, limit: number = MAX_RESULTS): Pro
             },
             body: JSON.stringify({
               query,
-              num_results: limit,
-              type: "auto",
-              highlights: {
-                num_sentences: 3,
+              numResults: limit,
+              type: "instant",
+              category: "news",
+              contents: {
+                highlights: {
+                  maxCharacters: 900,
+                },
               },
             }),
           }),
@@ -132,7 +136,9 @@ export async function exaSearch(query: string, limit: number = MAX_RESULTS): Pro
         return data.results.slice(0, limit).map((result: any) => ({
           title: result.title || "No title",
           url: result.url || "",
-          content: result.highlight || result.summary || "",
+          content: Array.isArray(result.highlights)
+            ? result.highlights.join(" ")
+            : result.summary || result.text || "",
           source: "Exa",
         }));
       },
@@ -147,11 +153,23 @@ export async function exaSearch(query: string, limit: number = MAX_RESULTS): Pro
 
 export async function webSearch(query: string, mode: Mode): Promise<SearchResult[]> {
   if (mode === "pro") {
-    const tavilyResults = await tavilySearch(query, 3);
-    if (tavilyResults.length > 0) {
-      return tavilyResults;
+    const [tavilyResults, exaResults] = await Promise.allSettled([
+      tavilySearch(query, 3),
+      exaSearch(query, 3),
+    ]);
+
+    const results = [
+      ...(tavilyResults.status === "fulfilled" ? tavilyResults.value : []),
+      ...(exaResults.status === "fulfilled" ? exaResults.value : []),
+    ];
+
+    const deduped = new Map<string, SearchResult>();
+    for (const result of results) {
+      const key = `${result.title.toLowerCase().trim()}|${result.url.trim()}`;
+      if (!deduped.has(key)) deduped.set(key, result);
     }
-    return await exaSearch(query, 3);
+
+    return Array.from(deduped.values()).slice(0, 4);
   }
 
   if (mode === "thinking") {
