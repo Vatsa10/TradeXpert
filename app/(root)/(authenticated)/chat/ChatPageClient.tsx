@@ -37,12 +37,20 @@ export default function ChatPageClient() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchSessions();
-  }, []);
+    const scrollToBottom = () => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    };
+    
+    // Use requestAnimationFrame or a small timeout to ensure the DOM has updated
+    const timeoutId = setTimeout(scrollToBottom, 50);
+    return () => clearTimeout(timeoutId);
+  }, [messages, isLoading]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    fetchSessions();
+  }, []);
 
   const fetchSessions = async () => {
     try {
@@ -214,8 +222,8 @@ export default function ChatPageClient() {
         </Card>
       </div>
 
-      <div className="flex-1 flex flex-col">
-        <Card className="flex-1 flex flex-col bg-zinc-900 border-zinc-800 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0">
+        <Card className="flex-1 flex flex-col bg-zinc-900 border-zinc-800 overflow-hidden min-h-0 p-0 shadow-none">
           <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
@@ -257,7 +265,7 @@ export default function ChatPageClient() {
             </div>
           </div>
 
-          <ScrollArea className="flex-1 p-4">
+          <div className="flex flex-1 flex-col overflow-y-auto p-4 min-h-0 custom-scrollbar scroll-smooth">
             <div className="space-y-4">
               {messages.length === 0 && (
                 <div className="text-center py-12">
@@ -324,9 +332,9 @@ export default function ChatPageClient() {
                   </div>
                 </div>
               )}
-              <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} className="h-4" />
             </div>
-          </ScrollArea>
+          </div>
 
           <div className="p-4 border-t border-zinc-800">
             <form onSubmit={handleSubmit} className="flex gap-2">

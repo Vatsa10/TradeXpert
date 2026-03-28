@@ -36,6 +36,9 @@ export interface FinancialMetrics {
   market_cap?: number;
   fifty_two_week_high?: number;
   fifty_two_week_low?: number;
+  return_1m?: number;
+  return_3m?: number;
+  return_52w?: number;
 }
 
 export interface CompanyProfile {

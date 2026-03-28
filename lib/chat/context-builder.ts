@@ -5,7 +5,7 @@ import { analyzeSentiment } from "./sentiment";
 import { getTechnicalIndicators } from "./indicators";
 import { runPriorityQueue, QueuedTask } from "./queue";
 
-const TIMEOUT_MS = 1200;
+const TIMEOUT_MS = 3500;
 
 function toNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -16,6 +16,15 @@ function toNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function normalizePercent(value: unknown): number | undefined {
+  const parsed = toNumber(value);
+  if (parsed === undefined) return undefined;
+  if (Math.abs(parsed) <= 1.5) {
+    return parsed * 100;
+  }
+  return parsed;
+}
+
 function normalizeMetrics(raw: any): FinancialMetrics | null {
   if (!raw) return null;
   const metric = raw.metric ?? raw;
@@ -24,7 +33,7 @@ function normalizeMetrics(raw: any): FinancialMetrics | null {
   const pe = toNumber(metric.peTTM ?? metric.peNormalizedAnnual ?? metric.peBasicExclExtraTTM ?? metric.PERatio);
   const pb = toNumber(metric.pbAnnual ?? metric.pbQuarterly ?? metric.PriceToBookRatio);
   const marketCap = toNumber(metric.marketCapitalization ?? metric.MarketCapitalization);
-  const revenueGrowth = toNumber(
+  const revenueGrowth = normalizePercent(
     metric.revenueGrowthTTMYoy ?? metric.revenueGrowth3Y ?? metric.revenueGrowth5Y ?? metric.QuarterlyRevenueGrowthYOY
   );
   const debtToEquity = toNumber(metric.totalDebtToEquityQuarterly ?? metric.totalDebtToEquityAnnual ?? metric.DebtToEquity);
@@ -32,6 +41,9 @@ function normalizeMetrics(raw: any): FinancialMetrics | null {
   const eps = toNumber(metric.epsTTM ?? metric.epsBasicExclExtraItemsAnnual ?? metric.DilutedEPSTTM ?? metric.EPS);
   const high52 = toNumber(metric["52WeekHigh"] ?? metric.WeekHigh52);
   const low52 = toNumber(metric["52WeekLow"] ?? metric.WeekLow52);
+  const return1m = normalizePercent(metric["1MonthPriceReturnDaily"] ?? metric["monthToDatePriceReturnDaily"]);
+  const return3m = normalizePercent(metric["3MonthPriceReturnDaily"]);
+  const return52w = normalizePercent(metric["52WeekPriceReturnDaily"]);
 
   const normalized: FinancialMetrics = {
     pe_ratio: pe,
@@ -43,6 +55,9 @@ function normalizeMetrics(raw: any): FinancialMetrics | null {
     market_cap: marketCap,
     fifty_two_week_high: high52,
     fifty_two_week_low: low52,
+    return_1m: return1m,
+    return_3m: return3m,
+    return_52w: return52w,
   };
 
   const hasAnyValue = Object.values(normalized).some((v) => v !== undefined && v !== null);
@@ -212,13 +227,13 @@ export async function buildContext(
     {
       id: "metrics",
       priority: 2,
-      timeoutMs: 1500,
+      timeoutMs: 3200,
       task: () => fetchMetrics(entity.symbol!),
     },
     {
       id: "news",
       priority: 2,
-      timeoutMs: 1800,
+      timeoutMs: 3200,
       task: () => fetchCompanyNews(entity.symbol!),
     },
   ];
@@ -227,7 +242,7 @@ export async function buildContext(
     tasks.push({
       id: "search",
       priority: 3,
-      timeoutMs: 3500,
+      timeoutMs: 4000,
       task: () => webSearch(query, mode),
     });
   }
@@ -236,14 +251,14 @@ export async function buildContext(
     tasks.push({
       id: "indicators",
       priority: 3,
-      timeoutMs: 2500,
+      timeoutMs: 3200,
       task: () => getTechnicalIndicators(entity.symbol!),
     });
   }
 
   const { results } = await runPriorityQueue(tasks, {
     concurrency: 4,
-    stageTimeoutMs: { 1: 2500, 2: 5000, 3: 7000 },
+    stageTimeoutMs: { 1: 3000, 2: 8000, 3: 8000 },
   });
 
   context.priceData = (results.price as PriceData | null) || null;
@@ -329,13 +344,13 @@ export async function buildMultiStockContext(
     tasks.push({
       id: `metrics:${symbol}`,
       priority: 2,
-      timeoutMs: 1800,
+      timeoutMs: 3200,
       task: () => fetchMetrics(symbol),
     });
     tasks.push({
       id: `news:${symbol}`,
       priority: 2,
-      timeoutMs: 2200,
+      timeoutMs: 3200,
       task: () => fetchCompanyNews(symbol),
     });
   }
@@ -343,13 +358,13 @@ export async function buildMultiStockContext(
   tasks.push({
     id: "search",
     priority: 3,
-    timeoutMs: 4000,
+    timeoutMs: 4500,
     task: () => (mode === "pro" || intent === "macro" || intent === "comparison" ? webSearch(query, mode) : Promise.resolve([])),
   });
 
   const { results, errors } = await runPriorityQueue(tasks, {
     concurrency: 5,
-    stageTimeoutMs: { 1: 3000, 2: 6000, 3: 5000 },
+    stageTimeoutMs: { 1: 3500, 2: 9000, 3: 7000 },
   });
 
   const allNews: NewsItem[] = [];

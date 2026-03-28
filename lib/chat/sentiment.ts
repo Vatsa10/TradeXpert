@@ -3,7 +3,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { withRateLimit } from "./rate-limiter";
 
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash-preview",
+  model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
   maxOutputTokens: 512,
   temperature: 0.2,
