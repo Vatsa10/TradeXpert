@@ -260,7 +260,7 @@ export const NEWS_SUMMARY_EMAIL_TEMPLATE = `<!DOCTYPE html>
                     <!-- Header with Logo -->
                     <tr>
                         <td align="left" class="mobile-header-padding" style="padding: 40px 40px 20px 40px;">
-                            <img src="https://ik.imagekit.io/yoqpgz1jm/logo.png" alt="TradXpert Logo" width="150" style="max-width: 100%; height: auto;">
+                            <img src="" alt="TradXpert Logo" width="150" style="max-width: 100%; height: auto;">
                         </td>
                     </tr>
                     
@@ -288,10 +288,10 @@ export const NEWS_SUMMARY_EMAIL_TEMPLATE = `<!DOCTYPE html>
                                 </p>
                                 <p style="margin: 0 0 10px 0; font-size: 14px; line-height: 1.5; color: #CCDADC !important;">
                                     <a href="#" style="color: #CCDADC !important; text-decoration: underline;">Unsubscribe</a> | 
-                                    <a href="https://TradXpert.vercel.app" style="color: #CCDADC !important; text-decoration: underline;">Visit TradXpert</a>
+                                    <a href="https://tradexpert.vercel.app" style="color: #CCDADC !important; text-decoration: underline;">Visit TradXpert</a>
                                 </p>
                                 <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #CCDADC !important;">
-                                    © 2025 TradXpert
+                                    © 2026 TradXpert
                                 </p>
                             </div>
                         </td>
