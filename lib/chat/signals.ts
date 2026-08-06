@@ -23,10 +23,13 @@ export function buildSignals(
   const signals: Signal[] = [];
 
   if (priceData) {
-    const change = priceData.change_percent || priceData.dp || 0;
-    const currentPrice = priceData.current || priceData.c;
-    const high52w = priceData.fifty_two_week_high;
-    const low52w = priceData.fifty_two_week_low;
+    // PriceData (lib/chat/types.ts) exposes `changePercent`; the legacy
+    // `change_percent` / `dp` aliases are kept only for raw provider payloads.
+    const change = priceData.changePercent ?? priceData.change_percent ?? priceData.dp ?? 0;
+    const currentPrice = priceData.current ?? priceData.c;
+    // 52-week bounds live on FinancialMetrics, not on the quote payload.
+    const high52w = metrics?.fifty_two_week_high ?? priceData.fifty_two_week_high;
+    const low52w = metrics?.fifty_two_week_low ?? priceData.fifty_two_week_low;
 
     signals.push({
       category: "technical",
@@ -42,7 +45,7 @@ export function buildSignals(
           : "Stable price action",
     });
 
-    if (high52w && low52w && currentPrice) {
+    if (high52w && low52w && currentPrice && high52w > low52w) {
       const position = ((currentPrice - low52w) / (high52w - low52w)) * 100;
       signals.push({
         category: "technical",

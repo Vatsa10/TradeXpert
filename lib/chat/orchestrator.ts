@@ -1,11 +1,11 @@
 import { Mode, Intent, FlowResult, QueryContext, ExecutionMetrics } from "./types";
-import { classifyIntent, extractEntity, extractAllSymbols, isStockRelated } from "./intent";
+import { classifyIntent, extractEntity, extractAllSymbols } from "./intent";
 import { buildContext, isDataSufficient, buildMultiStockContext } from "./context-builder";
 import { detectEvents } from "./events";
 import { buildSignals } from "./signals";
 import { webSearch } from "./search";
 import { generateLLMResponse, transformForMarkdown } from "./response";
-import { shouldEarlyExit, isWithinBudget } from "./early-exit";
+import { isWithinBudget } from "./early-exit";
 import { clearRequestCache } from "./cache";
 import { packContextMessages, ChatTurn } from "./context-history";
 
@@ -56,7 +56,11 @@ function getExecutionMetrics(
 export async function orchestrateQuery(
   query: string,
   userMode?: Mode,
-  history: ChatTurn[] = []
+  history: ChatTurn[] = [],
+  // Optional: the signed-in user's email. Present, it unlocks the Kite
+  // (Zerodha) path for Indian tickers; absent, every provider behaves exactly
+  // as before.
+  userEmail?: string
 ): Promise<FlowResult> {
   const startTime = Date.now();
   clearRequestCache();
@@ -70,16 +74,12 @@ export async function orchestrateQuery(
 
   console.log(`[Orchestrator] Query: "${query.substring(0, 50)}..." | Intent: ${intent} | Mode: ${mode} | Symbols: ${JSON.stringify(allSymbols)}`);
 
-  const earlyExit = shouldEarlyExit(query, {}, intent);
-  
-  console.log(`[Orchestrator] Early exit: ${earlyExit.shouldExit}, Reason: ${earlyExit.reason || "none"}`);
-
   let context;
   if (allSymbols.length > 1) {
     console.log(`[Orchestrator] Multiple stocks detected, building multi-stock context`);
-    context = await buildMultiStockContext(query, intent, allSymbols, mode);
+    context = await buildMultiStockContext(query, intent, allSymbols, mode, userEmail);
   } else {
-    context = await buildContext(query, intent, entity, mode);
+    context = await buildContext(query, intent, entity, mode, userEmail);
   }
   
   const multiStockData = context.multiStockData;
@@ -99,7 +99,12 @@ export async function orchestrateQuery(
     };
   }
 
-  const events = detectEvents(context.news || [], context.searchResults || []);
+  // detectEvents was computed and thrown away, so QueryContext.events was
+  // always undefined downstream. Attach it before the context reaches the LLM.
+  context = {
+    ...context,
+    events: detectEvents(context.news || [], context.searchResults || []),
+  };
 
   const metrics = getExecutionMetrics(startTime, mode, intent, context);
   console.log(`[Orchestrator] Execution metrics:`, metrics);

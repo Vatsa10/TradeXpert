@@ -40,7 +40,12 @@ async function runBatch(
 
   const workers = Array.from({ length: Math.min(concurrency, tasks.length) }).map(async () => {
     while (index < tasks.length) {
-      if (Date.now() - start > stageTimeoutMs) return;
+      if (Date.now() - start > stageTimeoutMs) {
+        console.error(
+          `[Queue] stage-budget-exhausted stageTimeoutMs=${stageTimeoutMs} elapsedMs=${Date.now() - start} skipped=${tasks.length - index}`
+        );
+        return;
+      }
 
       const currentIndex = index;
       index += 1;
@@ -52,7 +57,13 @@ async function runBatch(
         const value = await withTimeout(task.task(), task.timeoutMs);
         results[task.id] = value;
       } catch (error: any) {
-        errors[task.id] = error?.message || "Unknown queue task error";
+        const message = error?.message || "Unknown queue task error";
+        errors[task.id] = message;
+        // Timeouts used to vanish into the errors map; log which upstream blew
+        // which configured budget so slow providers are greppable.
+        console.error(
+          `[Queue] task-failed upstream=${task.id} priority=${task.priority} timeoutMs=${task.timeoutMs} stageTimeoutMs=${stageTimeoutMs} error=${String(message).replace(/\s+/g, " ").slice(0, 200)}`
+        );
       }
     }
   });

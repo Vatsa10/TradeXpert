@@ -13,11 +13,13 @@ interface TechnicalIndicator {
 
 interface TechnicalIndicators {
   rsi?: TechnicalIndicator;
-  macd?: TechnicalIndicator;
+  macd?: TechnicalIndicator & { crossover?: "bullish" | "bearish" | null };
   sma20?: TechnicalIndicator;
   sma50?: TechnicalIndicator;
   ema20?: TechnicalIndicator;
   ema50?: TechnicalIndicator;
+  bollinger?: TechnicalIndicator & { upper: number; lower: number; percentB: number };
+  atr?: TechnicalIndicator;
   adx?: TechnicalIndicator;
   cci?: TechnicalIndicator;
   stoch?: TechnicalIndicator;
@@ -200,7 +202,8 @@ export function formatIndicatorsForPrompt(indicators: TechnicalIndicators): stri
   }
 
   if (indicators.macd) {
-    prompt += `- **MACD**: ${indicators.macd.signal.toUpperCase()} (histogram: ${indicators.macd.value?.toFixed(2)})\n`;
+    const cross = indicators.macd.crossover ? ` — fresh ${indicators.macd.crossover} crossover` : "";
+    prompt += `- **MACD**: ${indicators.macd.signal.toUpperCase()} (histogram: ${indicators.macd.value?.toFixed(2)})${cross}\n`;
   }
 
   if (indicators.adx) {
@@ -209,6 +212,26 @@ export function formatIndicatorsForPrompt(indicators: TechnicalIndicators): stri
 
   if (indicators.sma20) {
     prompt += `- **SMA 20**: ${indicators.sma20.value?.toFixed(2)}\n`;
+  }
+
+  if (indicators.sma50) {
+    prompt += `- **SMA 50**: ${indicators.sma50.value?.toFixed(2)}\n`;
+  }
+
+  if (indicators.ema20) {
+    prompt += `- **EMA 20**: ${indicators.ema20.value?.toFixed(2)} (${indicators.ema20.signal.toUpperCase()})\n`;
+  }
+
+  if (indicators.ema50) {
+    prompt += `- **EMA 50**: ${indicators.ema50.value?.toFixed(2)} (${indicators.ema50.signal.toUpperCase()})\n`;
+  }
+
+  if (indicators.bollinger) {
+    prompt += `- **Bollinger (20,2)**: upper ${indicators.bollinger.upper.toFixed(2)} / lower ${indicators.bollinger.lower.toFixed(2)}, %B ${indicators.bollinger.percentB.toFixed(2)} - ${indicators.bollinger.description}\n`;
+  }
+
+  if (indicators.atr) {
+    prompt += `- **ATR (14)**: ${indicators.atr.value?.toFixed(2)} (volatility / stop-distance reference)\n`;
   }
 
   return prompt;
@@ -227,6 +250,12 @@ export function getTechnicalSignals(indicators: TechnicalIndicators): string[] {
   }
   if (indicators.adx) {
     signals.push(`ADX: ${indicators.adx.signal}`);
+  }
+  if (indicators.bollinger) {
+    signals.push(`Bollinger: ${indicators.bollinger.signal}`);
+  }
+  if (indicators.ema20) {
+    signals.push(`EMA20: ${indicators.ema20.signal}`);
   }
 
   return signals;

@@ -99,7 +99,11 @@ export function getStepsToSkip(
   return stepsToSkip;
 }
 
-export const EXECUTION_BUDGET_MS = 2500;
+// Must exceed the worst-case context-build time (lib/chat/context-builder.ts
+// runs priority stages of 3000 + 8000 + 8000 ms), otherwise every budget check
+// after buildContext() fails and the insufficient-data web-search fallback in
+// the orchestrator is unreachable dead code.
+export const EXECUTION_BUDGET_MS = 22000;
 
 export function isWithinBudget(startTime: number): boolean {
   return Date.now() - startTime < EXECUTION_BUDGET_MS;

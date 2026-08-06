@@ -5,6 +5,9 @@ import { assessDataQuality } from "./context-builder";
 import { calibrateConfidence, getDataQuality } from "./confidence";
 import { setCooldown, withRateLimit } from "./rate-limiter";
 import { parseLLMJson } from "./schemas";
+import { detectPersona } from "./personas";
+import { getDeepSeekLLM } from "./deepseek";
+import { isLikelyIndianTicker } from "@/lib/data/providers/nse-india";
 
 const fastLLM = new ChatGoogleGenerativeAI({
   model: "gemini-3.1-flash-lite-preview",
@@ -87,14 +90,18 @@ function sanitizeText(input: string): string {
   return cleaned.replace(/\s{2,}/g, " ").trim();
 }
 
-function getSystemPrompt(mode: Mode, currentDate: string, comparison: boolean): string {
+function getSystemPrompt(mode: Mode, currentDate: string, comparison: boolean, personaPrompt: string = ""): string {
   const role = mode === "pro"
     ? "You are TradeXpert AI, a senior investment strategist."
     : mode === "thinking"
       ? "You are TradeXpert AI, an institutional-grade analyst."
       : "You are TradeXpert AI, a practical market assistant.";
 
-  return `${role} Today's date is ${currentDate}. ${comparison ? "This is a comparison query. You must provide a direct decision when confidence is adequate." : ""}\n${OUTPUT_SCHEMA}`;
+  const personaBlock = personaPrompt
+    ? `\n\nPERSONA MODE\n${personaPrompt}\nAnswer in this investor's voice and apply their checklist, but still return the exact JSON schema below.`
+    : "";
+
+  return `${role} Today's date is ${currentDate}. ${comparison ? "This is a comparison query. You must provide a direct decision when confidence is adequate." : ""}${personaBlock}\n${OUTPUT_SCHEMA}`;
 }
 
 function formatMoney(value?: number | null): string {
@@ -170,7 +177,7 @@ function buildContextPrompt(context: QueryContext): string {
         const bits: string[] = [];
         if (typeof data.metrics.pe_ratio === "number") bits.push(`P/E ${data.metrics.pe_ratio.toFixed(1)}`);
         if (typeof data.metrics.revenue_growth === "number") bits.push(`RevGrowth ${data.metrics.revenue_growth.toFixed(2)}%`);
-        if (typeof data.metrics.market_cap === "number") bits.push(`MCap ${data.metrics.market_cap}`);
+        if (typeof data.metrics.market_cap === "number") bits.push(`MCap ${formatMoney(data.metrics.market_cap)} (USD)`);
         if (typeof data.metrics.return_1m === "number") bits.push(`1M ${data.metrics.return_1m.toFixed(2)}%`);
         if (typeof data.metrics.return_3m === "number") bits.push(`3M ${data.metrics.return_3m.toFixed(2)}%`);
         if (typeof data.metrics.return_52w === "number") bits.push(`52W ${data.metrics.return_52w.toFixed(2)}%`);
@@ -189,7 +196,7 @@ function buildContextPrompt(context: QueryContext): string {
   if (context.metrics) {
     const bits: string[] = [];
     if (typeof context.metrics.pe_ratio === "number") bits.push(`P/E ${context.metrics.pe_ratio.toFixed(1)}`);
-    if (typeof context.metrics.market_cap === "number") bits.push(`MCap ${context.metrics.market_cap}`);
+    if (typeof context.metrics.market_cap === "number") bits.push(`MCap ${formatMoney(context.metrics.market_cap)} (USD)`);
     if (typeof context.metrics.revenue_growth === "number") bits.push(`RevGrowth ${context.metrics.revenue_growth.toFixed(2)}%`);
     if (typeof context.metrics.return_1m === "number") bits.push(`1M ${context.metrics.return_1m.toFixed(2)}%`);
     if (typeof context.metrics.return_3m === "number") bits.push(`3M ${context.metrics.return_3m.toFixed(2)}%`);
@@ -200,11 +207,52 @@ function buildContextPrompt(context: QueryContext): string {
     prompt += `\nNEWS\n${context.news.slice(0, 3).map((n, i) => `${i + 1}. ${n.headline}`).join("\n")}\n`;
   }
 
+  if (context.marketPulse?.quotes?.length) {
+    const rows = context.marketPulse.quotes
+      .slice(0, 8)
+      .map((q) => `${q.symbol} ${q.price} (${q.changePercent >= 0 ? "+" : ""}${q.changePercent.toFixed(2)}%)`)
+      .join(", ");
+    prompt += `\nMARKET PULSE (${context.marketPulse.screen})\n${rows}\n`;
+  }
+
   if (context.sentiment) {
     prompt += `\nSENTIMENT\nOverall ${context.sentiment.overallSentiment}; Confidence ${(context.sentiment.confidence * 100).toFixed(0)}%; Signals ${context.sentiment.macroSignals.join(", ")}\n`;
   }
 
+  if (context.events?.length) {
+    prompt += `\nDETECTED EVENTS\n${context.events.join(", ")}\n`;
+  }
+
+  const indianGaps = indianSymbolsWithoutData(context);
+  if (indianGaps.length > 0) {
+    prompt += `\nDATA AVAILABILITY\nIndian market data currently unavailable for ${indianGaps.join(", ")}. No price, metrics or quote could be retrieved. Do NOT state or estimate a price, level or valuation for these symbols — say the data is unavailable and keep confidence low.\n`;
+  }
+
   return prompt;
+}
+
+// The NSE/BSE upstream is frequently unreachable and Finnhub/Alpha Vantage have
+// no .NS/.BO coverage on the free tier, so an Indian symbol routinely reaches the
+// model with no price at all. Without an explicit marker the model answered
+// confidently from its training data; naming the gap keeps it honest.
+export function indianSymbolsWithoutData(context: QueryContext): string[] {
+  const missing: string[] = [];
+
+  const consider = (symbol: string | undefined, hasPrice: boolean) => {
+    if (!symbol || hasPrice) return;
+    if (!isLikelyIndianTicker(symbol)) return;
+    if (!missing.includes(symbol)) missing.push(symbol);
+  };
+
+  if (context.multiStockData) {
+    for (const [symbol, data] of Object.entries(context.multiStockData)) {
+      consider(symbol, !!data?.price);
+    }
+  }
+
+  consider(context.entity?.symbol, !!context.priceData);
+
+  return missing;
 }
 
 function parseJSONResponse(raw: string): Partial<LLMResponse> | null {
@@ -253,6 +301,13 @@ function buildFallbackReasoning(context: QueryContext): string[] {
   }
   if (points.length < 3 && context.news?.length) {
     points.push(`Recent catalyst count is ${context.news.length} headlines in the current context window.`);
+  }
+
+  const indianGaps = indianSymbolsWithoutData(context);
+  if (indianGaps.length > 0) {
+    points.unshift(
+      `Indian market data currently unavailable for ${indianGaps.join(", ")} — 0 quotes retrieved from the NSE/BSE source, so no price-based conclusion can be drawn.`
+    );
   }
 
   while (points.length < 3) {
@@ -363,26 +418,76 @@ function shouldRunProReviewer(
   return false;
 }
 
+// Single-line, greppable log line for the LLM path. User content is capped at
+// 60 chars and newline-flattened so prompts never leak into logs wholesale.
+function logLLMFailure(
+  stage: "gemini-call" | "deepseek-call" | "json-parse",
+  provider: string,
+  mode: Mode,
+  detail: string,
+  extra = ""
+): void {
+  console.error(
+    `[LLM] stage=${stage} provider=${provider} mode=${mode} error=${detail.replace(/\s+/g, " ").slice(0, 200)}${extra}`
+  );
+}
+
+function snippet(value: string, max: number): string {
+  return value.replace(/\s+/g, " ").slice(0, max);
+}
+
+// Parsing used to fail into createFallbackResponse with nothing logged; keep
+// the same return contract and just record what the model actually sent back.
+function parseWithLogging(
+  raw: string,
+  provider: string,
+  mode: Mode
+): Partial<LLMResponse> | null {
+  const parsed = parseJSONResponse(raw);
+  if (!parsed) {
+    logLLMFailure("json-parse", provider, mode, "unparseable LLM output", ` raw="${snippet(raw, 200)}"`);
+  }
+  return parsed;
+}
+
 async function callLLM(
   llm: any,
   systemPrompt: string,
   userPrompt: string,
-  rateLimitKey: string
+  rateLimitKey: string,
+  mode: Mode
 ): Promise<string | null> {
-  const call = async () => {
-    const response = await llm.invoke([
+  const invoke = async (model: any) => {
+    const response = await model.invoke([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ]);
-    return typeof response === "string" ? response : response.content;
+    const content = typeof response === "string" ? response : response.content;
+    return typeof content === "string" ? content : String(content || "");
   };
 
   try {
-    const result = await withRateLimit(rateLimitKey, call, true);
-    return typeof result === "string" ? result : String(result || "");
-  } catch {
-    return null;
+    const result = await withRateLimit(rateLimitKey, () => invoke(llm), true);
+    if (result) return result;
+    logLLMFailure("gemini-call", rateLimitKey, mode, "empty result (no content or rate-limit cooldown)", ` prompt="${snippet(userPrompt, 60)}"`);
+  } catch (error: any) {
+    // fall through to DeepSeek
+    logLLMFailure("gemini-call", rateLimitKey, mode, String(error?.message || error), ` prompt="${snippet(userPrompt, 60)}"`);
   }
+
+  // Gemini failed or is cooling down — try DeepSeek before giving up.
+  const deepseek = getDeepSeekLLM();
+  if (deepseek) {
+    try {
+      return await withRateLimit("deepseek", () => invoke(deepseek), true);
+    } catch (error: any) {
+      logLLMFailure("deepseek-call", "deepseek", mode, String(error?.message || error), ` prompt="${snippet(userPrompt, 60)}"`);
+      return null;
+    }
+  }
+
+  logLLMFailure("deepseek-call", "deepseek", mode, "no DeepSeek client configured; no fallback available");
+  return null;
 }
 
 function mergeProResponses(draft: Partial<LLMResponse> | null, reviewed: Partial<LLMResponse> | null): Partial<LLMResponse> | null {
@@ -427,6 +532,66 @@ function applyTrendAdjustment(initialTrend: Trend, context: QueryContext): Trend
   return initialTrend;
 }
 
+const BEARISH_REASON_PATTERNS = [
+  /\bdecline?[ds]?\b/i, /\bdeclining\b/i, /\bdrop(?:ped|ping|s)?\b/i, /\bfell\b/i, /\bfalling\b/i,
+  /\bdown\b/i, /\blower\b/i, /\bweak(?:er|ness)?\b/i, /\bloss(?:es)?\b/i, /\bnegative\b/i,
+  /\bbearish\b/i, /\bcontract(?:ed|ing|ion)\b/i, /\bmiss(?:ed|es)?\b/i, /\bcut\b/i,
+  /\bdecrease[ds]?\b/i, /\bdecreasing\b/i, /\bshrank\b/i, /\bshrink(?:ing)?\b/i, /\bworsen\w*\b/i,
+  /\bdowngrade[ds]?\b/i, /\bunderperform\w*\b/i, /\bslow(?:ed|ing|down)\b/i, /\bsell-?off\b/i,
+  /\bheadwind\w*\b/i, /\bpressure[ds]?\b/i, /\bovervalued\b/i, /-\d+(?:\.\d+)?%/,
+];
+
+const BULLISH_REASON_PATTERNS = [
+  /\brise[ns]?\b/i, /\brising\b/i, /\brose\b/i, /\bgain(?:ed|ing|s)?\b/i, /\bup\b/i,
+  /\bhigher\b/i, /\bstrong(?:er|th)?\b/i, /\bpositive\b/i, /\bbullish\b/i, /\bgrow(?:th|ing|s)?\b/i,
+  /\bbeat\b/i, /\bupgrade[ds]?\b/i, /\boutperform\w*\b/i, /\brall(?:y|ies|ied|ying)\b/i,
+  /\bgrew\b/i, /\bincrease[ds]?\b/i, /\bincreasing\b/i, /\bimprove[ds]?\b/i, /\bimproving\b/i,
+  /\bsurge[ds]?\b/i, /\bexpand(?:ed|ing|sion)?\b/i, /\btailwind\w*\b/i, /\bundervalued\b/i,
+  /\+\d+(?:\.\d+)?%/,
+];
+
+function scoreReasonLine(line: string): -1 | 0 | 1 {
+  const bearish = BEARISH_REASON_PATTERNS.filter((p) => p.test(line)).length;
+  const bullish = BULLISH_REASON_PATTERNS.filter((p) => p.test(line)).length;
+  if (bearish > bullish) return -1;
+  if (bullish > bearish) return 1;
+  return 0;
+}
+
+// A model that lists three bearish reasons and then labels the trend BULLISH is
+// contradicting its own evidence. When every leaning reasoning line points one
+// way and the stated trend points the other, and no strong macro/sentiment
+// signal justifies the override, trust the reasoning. Deterministic and logged.
+export function reconcileTrendWithReasoning(
+  trend: Trend,
+  reasoning: string[],
+  signalScore: number
+): Trend {
+  if (trend === "neutral") return trend;
+  if (Math.abs(signalScore) >= 1.5) return trend;
+
+  const scores = (reasoning || []).map(scoreReasonLine).filter((s) => s !== 0);
+  if (scores.length < 2) return trend;
+
+  const allBearish = scores.every((s) => s === -1);
+  const allBullish = scores.every((s) => s === 1);
+
+  if (trend === "bullish" && allBearish) {
+    console.warn(
+      `[Response] Trend/reasoning contradiction: trend=bullish with ${scores.length} bearish reasoning lines -> bearish`
+    );
+    return "bearish";
+  }
+  if (trend === "bearish" && allBullish) {
+    console.warn(
+      `[Response] Trend/reasoning contradiction: trend=bearish with ${scores.length} bullish reasoning lines -> bullish`
+    );
+    return "bullish";
+  }
+
+  return trend;
+}
+
 function ensureValidResponse(
   parsed: Partial<LLMResponse> | null,
   query: string,
@@ -437,13 +602,15 @@ function ensureValidResponse(
 
   const confidence = calibrateConfidence(parsed.confidence ?? 0.35, context, context.intent);
   const policy = enforceDecisionPolicy(parsed, query, context, confidence);
-  const trend = applyTrendAdjustment((parsed.trend as Trend) || "neutral", context);
+  const adjustedTrend = applyTrendAdjustment((parsed.trend as Trend) || "neutral", context);
   const reasoning = (parsed.reasoning || []).filter((line) => sanitizeText(line).length > 0);
+  const finalReasoning = reasoning.length >= 3 ? reasoning : buildFallbackReasoning(context);
+  const trend = reconcileTrendWithReasoning(adjustedTrend, finalReasoning, getSignalScore(context));
 
   return {
     summary: sanitizeText(parsed.summary || "Analysis completed based on available data.") || "Analysis completed based on available data.",
     trend,
-    reasoning: reasoning.length >= 3 ? reasoning : buildFallbackReasoning(context),
+    reasoning: finalReasoning,
     advice: policy.advice,
     recommendation: policy.recommendation,
     confidence,
@@ -468,6 +635,9 @@ export async function generateLLMResponse(
     day: "numeric",
   });
 
+  const persona = detectPersona(query);
+  const personaPrompt = persona?.systemPrompt || "";
+
   const contextPrompt = buildContextPrompt(context);
   const signalPrompt = signals
     ? `\nSIGNALS\n${signals.signals.map((s) => `- ${s.indicator}: ${s.signal} (${s.reasoning})`).join("\n")}\nOverall: ${signals.overallTrend}`
@@ -485,6 +655,7 @@ ${signalPrompt}
 
 Grounding requirements:
 - Use exact numbers from context
+- Market cap ("MCap") is already in USD and pre-formatted with its magnitude suffix (K/M/B/T). Quote it exactly as given and never rescale it or restate it in millions
 - Include at least 3 reasoning points with numbers
 - For comparison queries, produce a direct recommendation
 - Prefer aggregator data over narrative assumptions
@@ -494,20 +665,22 @@ Grounding requirements:
     if (mode !== "pro") {
       const raw = await callLLM(
         fastLLM,
-        getSystemPrompt(mode, currentDate, comparison),
+        getSystemPrompt(mode, currentDate, comparison, personaPrompt),
         userPrompt,
-        "gemini"
+        "gemini",
+        mode
       );
-      return ensureValidResponse(parseJSONResponse(raw || ""), query, context, signals);
+      return ensureValidResponse(parseWithLogging(raw || "", "gemini", mode), query, context, signals);
     }
 
     const draftRaw = await callLLM(
       proFlashLLM,
-      getSystemPrompt("pro", currentDate, comparison),
+      getSystemPrompt("pro", currentDate, comparison, personaPrompt),
       userPrompt,
-      "gemini-pro-flash"
+      "gemini-pro-flash",
+      mode
     );
-    const draftParsed = parseJSONResponse(draftRaw || "");
+    const draftParsed = parseWithLogging(draftRaw || "", "gemini-pro-flash", mode);
 
     let finalParsed: Partial<LLMResponse> | null = draftParsed;
 
@@ -527,17 +700,24 @@ Return revised JSON using the exact schema.
 
       const reviewedRaw = await callLLM(
         proReasoningLLM,
-        getSystemPrompt("pro", currentDate, comparison),
+        getSystemPrompt("pro", currentDate, comparison, personaPrompt),
         reviewPrompt,
-        "gemini-pro-review"
+        "gemini-pro-review",
+        mode
       );
-      const reviewedParsed = parseJSONResponse(reviewedRaw || "");
+      const reviewedParsed = parseWithLogging(reviewedRaw || "", "gemini-pro-review", mode);
       finalParsed = mergeProResponses(draftParsed, reviewedParsed);
     }
 
     return ensureValidResponse(finalParsed, query, context, signals);
   } catch (error: any) {
-    console.error("LLM response error:", error?.message || error);
+    logLLMFailure(
+      "gemini-call",
+      mode === "pro" ? "gemini-pro-flash" : "gemini",
+      mode,
+      `unhandled: ${String(error?.message || error)}`,
+      ` status=${error?.status ?? "none"} query="${snippet(query, 60)}"`
+    );
     if (error?.status === 429) {
       setCooldown("gemini", 60000);
     }

@@ -88,13 +88,44 @@ function bm25Scores(query: string, documents: string[]): number[] {
 
 const TICKER_PATTERN = /\b[A-Z]{2,10}(?:\.NS|\.BO)?\b/g;
 
+// Assistant turns are rendered markdown reports full of shouted words
+// (BULLISH, HOLD, High/Low labels...). Without this filter the "mentioning:"
+// list is dominated by report vocabulary rather than actual tickers.
+const NON_TICKER_TOKENS = new Set([
+  "BULLISH",
+  "BEARISH",
+  "NEUTRAL",
+  "BUY",
+  "SELL",
+  "HOLD",
+  "WAIT",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+  "NEWS",
+  "PRICE",
+  "METRICS",
+  "SENTIMENT",
+  "SIGNALS",
+  "AI",
+  "USD",
+  "INR",
+  "YOY",
+  "TTM",
+  "JSON",
+  "URL",
+  "OK",
+]);
+
 function summarizeOlderPairs(pairs: ChatPair[]): string {
   if (pairs.length === 0) return "";
 
   const tickers = new Set<string>();
   for (const pair of pairs) {
     const matches = pairText(pair).match(TICKER_PATTERN) || [];
-    matches.forEach((m) => tickers.add(m));
+    matches.forEach((m) => {
+      if (!NON_TICKER_TOKENS.has(m)) tickers.add(m);
+    });
   }
 
   const tickerList = Array.from(tickers).slice(0, 15).join(", ");
@@ -141,11 +172,22 @@ export function packContextMessages(messages: ChatTurn[], currentQuery: string):
   ];
 }
 
+// Stored assistant turns are the full rendered markdown report (tables, source
+// lists, plans) and run into thousands of characters each. Packing them whole
+// pushed the prompt well past what the fast models can absorb, so cap each
+// turn — pair selection alone was not enough of a bound.
+const MAX_MESSAGE_CHARS = 1200;
+
+function truncateTurn(turn: ChatTurn): ChatTurn {
+  if (turn.content.length <= MAX_MESSAGE_CHARS) return turn;
+  return { role: turn.role, content: `${turn.content.slice(0, MAX_MESSAGE_CHARS)}...[truncated]` };
+}
+
 function pairsToMessages(pairs: ChatPair[]): ChatTurn[] {
   const out: ChatTurn[] = [];
   for (const pair of pairs) {
-    out.push(pair.user);
-    if (pair.assistant) out.push(pair.assistant);
+    out.push(truncateTurn(pair.user));
+    if (pair.assistant) out.push(truncateTurn(pair.assistant));
   }
   return out;
 }

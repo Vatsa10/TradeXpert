@@ -50,15 +50,16 @@ async function processQueue(): Promise<void> {
     
     concurrentRequests++;
     lastRequestTime = Date.now();
-    
-    try {
-      const result = await nextRequest.operation();
-      nextRequest.resolve(result);
-    } catch (error) {
-      nextRequest.reject(error);
-    } finally {
-      concurrentRequests--;
-    }
+
+    // Do NOT await here: awaiting serialized the queue so concurrentRequests
+    // never exceeded 1 and MAX_CONCURRENT was dead code.
+    nextRequest
+      .operation()
+      .then((result) => nextRequest.resolve(result))
+      .catch((error) => nextRequest.reject(error))
+      .finally(() => {
+        concurrentRequests--;
+      });
   }
   
   isProcessing = false;

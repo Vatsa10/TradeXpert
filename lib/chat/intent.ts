@@ -138,10 +138,8 @@ export function extractEntity(query: string): Entity | null {
     eth: "ETH",
   };
 
-  const lowerQuery = query.toLowerCase();
-  
   for (const [company, symbol] of Object.entries(companyPatterns)) {
-    if (lowerQuery.includes(company)) {
+    if (mentionsCompany(query, company)) {
       return {
         symbol,
         company,
@@ -153,9 +151,49 @@ export function extractEntity(query: string): Entity | null {
   return null;
 }
 
+// Tickers that collide with ordinary English words (or common abbreviations).
+// These are only accepted when the user gave an explicit signal: the token is
+// UPPERCASE in the original query, or it is $-prefixed.
+const AMBIGUOUS_TICKERS = new Set([
+  "NOW", "NET", "IQ", "V", "ALL", "IT", "ON", "ANY", "KEY", "SO", "ARE",
+  "FOR", "A", "AN", "AT", "BE", "BY", "GO", "HE", "IF", "IN", "IS", "ME",
+  "NO", "OR", "SEE", "TEAM", "PENN", "ZEN", "COIN", "SNAP", "SHOP", "PINS",
+  "DISH", "DOT", "SOL", "ADA", "LI", "JD", "YY", "ZM", "SQ", "TME", "WELL",
+]);
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// A ticker mention counts when it is $-prefixed, or written in uppercase with
+// word boundaries. Unambiguous tickers may also be written in any case.
+function mentionsTicker(query: string, symbol: string): boolean {
+  const escaped = escapeRegex(symbol);
+
+  if (new RegExp(`\\$${escaped}\\b`, "i").test(query)) {
+    return true;
+  }
+
+  if (new RegExp(`(?<![A-Za-z0-9$.])${escaped}(?![A-Za-z0-9.])`).test(query)) {
+    return true;
+  }
+
+  if (AMBIGUOUS_TICKERS.has(symbol)) {
+    return false;
+  }
+
+  return new RegExp(`(?<![A-Za-z0-9$.])${escaped}(?![A-Za-z0-9.])`, "i").test(query);
+}
+
+// Company names are matched on word boundaries so "fintech" is not "tech"
+// and "jpeg" is not "jp".
+function mentionsCompany(query: string, company: string): boolean {
+  return new RegExp(`\\b${escapeRegex(company)}\\b`, "i").test(query);
+}
+
 export function extractAllSymbols(query: string): string[] {
   const symbols: string[] = [];
-  
+
   const tickerSymbols = [
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "TSLA", "META", "NVDA", "NFLX",
     "JPM", "V", "WMT", "DIS", "PYPL", "INTC", "AMD", "CRM", "ORCL", "ADBE",
@@ -205,12 +243,8 @@ export function extractAllSymbols(query: string): string[] {
     eth: "ETH",
   };
 
-  const upperQuery = query.toUpperCase();
-  const lowerQuery = query.toLowerCase();
-  
   for (const symbol of tickerSymbols) {
-    const pattern = new RegExp(`\\b${symbol}\\b`, 'g');
-    if (pattern.test(upperQuery)) {
+    if (mentionsTicker(query, symbol)) {
       if (!symbols.includes(symbol)) {
         symbols.push(symbol);
       }
@@ -218,7 +252,7 @@ export function extractAllSymbols(query: string): string[] {
   }
 
   for (const [company, symbol] of Object.entries(companyToSymbol)) {
-    if (lowerQuery.includes(company)) {
+    if (mentionsCompany(query, company)) {
       if (!symbols.includes(symbol)) {
         symbols.push(symbol);
       }

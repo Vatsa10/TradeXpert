@@ -1,5 +1,11 @@
 const globalCache = new Map<string, CacheEntry>();
-const requestCache = new Map<string, any>();
+// In-flight de-duplication. This used to be a plain result map cleared by
+// clearRequestCache() at the top of every orchestrateQuery call — but module
+// state is shared across concurrent requests on the server, so one request
+// wiped another's mid-flight entries, and anything not cleared lived forever
+// with no TTL. Keying by promise and deleting on settle is self-cleaning and
+// race-free.
+const inFlight = new Map<string, Promise<any>>();
 
 interface CacheEntry {
   data: any;
@@ -14,6 +20,14 @@ const TTL = {
   news: 3 * 60 * 1000,
   search: 5 * 60 * 1000,
   alphaVantage: 3 * 60 * 60 * 1000,
+  // Kite quotes are the live Indian tape — short TTL keeps them near-real-time
+  // while still collapsing the burst of calls a single chat turn makes.
+  kiteQuote: 15 * 1000,
+  // The NSE instruments dump is several MB and only changes on corporate
+  // actions / new listings, so it is refetched once a day at most.
+  kiteInstruments: 24 * 60 * 60 * 1000,
+  kiteHistorical: 10 * 60 * 1000,
+  kitePortfolio: 30 * 1000,
 };
 
 export function getCacheKey(type: string, params: Record<string, any>): string {
@@ -61,17 +75,18 @@ export function setCache(
   });
 }
 
-export function getRequestCache<T>(key: string): T | null {
-  return requestCache.get(key) || null;
+export function getRequestCache<T>(key: string): Promise<T> | null {
+  return (inFlight.get(key) as Promise<T> | undefined) || null;
 }
 
-export function setRequestCache<T>(key: string, data: T): void {
-  requestCache.set(key, data);
+export function setRequestCache<T>(key: string, promise: Promise<T>): void {
+  inFlight.set(key, promise);
 }
 
-export function clearRequestCache(): void {
-  requestCache.clear();
-}
+// Kept for API compatibility. Deliberately a no-op for in-flight entries:
+// clearing them from one request cancelled de-duplication for every other
+// concurrent request.
+export function clearRequestCache(): void {}
 
 export async function getOrFetch<T>(
   key: string,
@@ -85,28 +100,37 @@ export async function getOrFetch<T>(
     return cached.data;
   }
 
-  const requestCached = getRequestCache<T>(key);
-  if (requestCached) {
-    return requestCached;
+  const pending = getRequestCache<T>(key);
+  if (pending) {
+    try {
+      return await pending;
+    } catch {
+      if (cached) return cached.data;
+      throw new Error(`Fetch failed for ${key}`);
+    }
   }
 
+  const promise = fetcher();
+  setRequestCache(key, promise);
+
   try {
-    const data = await fetcher();
+    const data = await promise;
     setCache(key, data, ttl, staleWhileRevalidate);
-    setRequestCache(key, data);
-    
+
     if (cached && cached.isStale && staleWhileRevalidate) {
       fetcher().then(freshData => {
         setCache(key, freshData, ttl, staleWhileRevalidate);
       }).catch(() => {});
     }
-    
+
     return data;
   } catch (error) {
     if (cached) {
       return cached.data;
     }
     throw error;
+  } finally {
+    if (inFlight.get(key) === promise) inFlight.delete(key);
   }
 }
 
@@ -125,5 +149,11 @@ export function cleanupExpiredCache(): void {
 }
 
 if (typeof setInterval !== "undefined") {
-  setInterval(cleanupExpiredCache, 60 * 1000);
+  const cleanupTimer = setInterval(cleanupExpiredCache, 60 * 1000);
+  // A janitor timer should never be the reason a process stays alive. Without
+  // unref, importing this module from a script (or a test runner) hangs the
+  // process forever waiting on an interval that only sweeps an in-memory Map.
+  if (typeof cleanupTimer === "object" && typeof cleanupTimer?.unref === "function") {
+    cleanupTimer.unref();
+  }
 }

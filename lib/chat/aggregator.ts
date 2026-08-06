@@ -2,7 +2,12 @@
 import { fetchJSON } from "../actions/finnhub.actions";
 import { getDateRange } from "../utils";
 import { getCacheKey, getOrFetch, getTTL } from "./cache";
-import { getIndianStockQuote, isLikelyIndianTicker } from "@/lib/data/providers/nse-india";
+import {
+  getIndianStockQuote,
+  isLikelyIndianTicker,
+  isNSEProviderConfigured,
+} from "@/lib/data/providers/nse-india";
+import { getKiteQuote, isKiteAvailable } from "@/lib/data/providers/kite";
 
 const FINNHUB_BASE_URL = "https://finnhub.io/api/v1";
 const FINNHUB_TOKEN = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
@@ -65,11 +70,28 @@ async function withTimeout<T>(
   }
 }
 
-export async function getFinnhubQuote(symbol: string) {
+// userEmail is optional and defaults to undefined: callers without an
+// authenticated user (scripts, unauthenticated paths) simply skip the Kite hop
+// rather than failing.
+export async function getFinnhubQuote(symbol: string, userEmail?: string) {
   // India-listed tickers (.NS/.BO) aren't covered by Finnhub/Alpha Vantage's
-  // free tiers — route them to the free NSE/BSE data source instead.
+  // free tiers. Kite is the primary source (the user's own Zerodha data, live
+  // and authoritative); the free NSE/BSE host is the fallback behind it.
   if (isLikelyIndianTicker(symbol)) {
+    if (userEmail) {
+      const kite = await getKiteQuote(userEmail, symbol);
+      if (kite) return kite;
+      console.warn(`[Kite] miss symbol=${symbol} configured=${isKiteAvailable()} — falling back to NSE provider`);
+    }
+
     const indian = await getIndianStockQuote(symbol);
+    if (!indian) {
+      // Fall through to the US providers (existing behaviour) — they usually
+      // have no .NS/.BO coverage either, so the context ends up priceData: null
+      // and buildContextPrompt marks the symbol unavailable rather than letting
+      // the model answer confidently from nothing.
+      console.warn(`[NSE] miss symbol=${symbol} configured=${isNSEProviderConfigured()}`);
+    }
     if (indian) {
       return {
         current: indian.lastPrice,
@@ -359,9 +381,9 @@ function mergeNewsItems(primary: Array<{ headline: string; summary: string; date
   return deduped.slice(0, 12);
 }
 
-export async function aggregateMarketData(symbol: string): Promise<MarketData> {
+export async function aggregateMarketData(symbol: string, userEmail?: string): Promise<MarketData> {
   const [priceData, profile, metrics, news] = await Promise.all([
-    getFinnhubQuote(symbol),
+    getFinnhubQuote(symbol, userEmail),
     getStockProfile(symbol),
     getStockMetrics(symbol),
     getCompanyNews(symbol),

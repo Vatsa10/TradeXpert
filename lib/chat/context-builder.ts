@@ -4,8 +4,12 @@ import { webSearch } from "./search";
 import { analyzeSentiment } from "./sentiment";
 import { getTechnicalIndicators } from "./indicators";
 import { runPriorityQueue, QueuedTask } from "./queue";
+import { detectPulseScreen, getMarketPulse } from "@/lib/data/providers/market-pulse";
 
 const TIMEOUT_MS = 3500;
+// The screener's own fetch aborts at 4000ms, so a 3500ms race here killed
+// otherwise-successful pulse calls before they could answer.
+const PULSE_TIMEOUT_MS = 5000;
 
 function toNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -25,21 +29,27 @@ function normalizePercent(value: unknown): number | undefined {
   return parsed;
 }
 
-function normalizeMetrics(raw: any): FinancialMetrics | null {
+export function normalizeMetrics(raw: any): FinancialMetrics | null {
   if (!raw) return null;
   const metric = raw.metric ?? raw;
   if (!metric || typeof metric !== "object") return null;
 
   const pe = toNumber(metric.peTTM ?? metric.peNormalizedAnnual ?? metric.peBasicExclExtraTTM ?? metric.PERatio);
   const pb = toNumber(metric.pbAnnual ?? metric.pbQuarterly ?? metric.PriceToBookRatio);
+  // Market cap is normalized to raw USD here, at ingestion, so every consumer
+  // (prompt, comparison table, fallback reasoning) can format one unit.
+  // Finnhub /stock/metric reports `marketCapitalization` in MILLIONS of USD
+  // (AAPL comes back as ~3,650,000), while Alpha Vantage OVERVIEW reports
+  // `MarketCapitalization` already in raw USD. Treating the Finnhub value as
+  // raw dollars is what rendered a $3.65T company as "$3.65M".
   const marketCapRawFinnhub = toNumber(metric.marketCapitalization);
   const marketCapRawAlpha = toNumber(metric.MarketCapitalization);
   let marketCap: number | undefined = undefined;
-  
+
   if (typeof marketCapRawAlpha === "number") {
-    marketCap = marketCapRawAlpha * 1e9;
+    marketCap = marketCapRawAlpha;
   } else if (typeof marketCapRawFinnhub === "number") {
-    marketCap = marketCapRawFinnhub;
+    marketCap = marketCapRawFinnhub * 1e6;
   }
   const revenueGrowth = normalizePercent(
     metric.revenueGrowthTTMYoy ?? metric.revenueGrowth3Y ?? metric.revenueGrowth5Y ?? metric.QuarterlyRevenueGrowthYOY
@@ -96,8 +106,9 @@ export function isDataSufficient(context: Partial<QueryContext>, intent: Intent)
       return !!context.priceData && !!context.news?.length;
     
     case "macro":
-      return (!!context.news && context.news.length > 0) || 
-             (!!context.searchResults && context.searchResults.length > 0);
+      return (!!context.news && context.news.length > 0) ||
+             (!!context.searchResults && context.searchResults.length > 0) ||
+             (!!context.marketPulse && context.marketPulse.quotes.length > 0);
     
     case "info":
       return !!context.profile || !!context.news?.length;
@@ -106,7 +117,8 @@ export function isDataSufficient(context: Partial<QueryContext>, intent: Intent)
       return !!context.priceData && !!context.news?.length;
     
     case "general":
-      return !!context.priceData || !!context.news?.length;
+      return !!context.priceData || !!context.news?.length ||
+             (!!context.marketPulse && context.marketPulse.quotes.length > 0);
     
     default:
       return false;
@@ -127,10 +139,12 @@ export function shouldUseWebSearch(
   return false;
 }
 
-async function fetchPriceData(symbol: string): Promise<PriceData | null> {
+// userEmail (when present) lets the Indian-ticker branch of getFinnhubQuote
+// try the user's own Kite/Zerodha feed first; undefined simply skips it.
+async function fetchPriceData(symbol: string, userEmail?: string): Promise<PriceData | null> {
   try {
     const data = await withTimeout(
-      getFinnhubQuote(symbol),
+      getFinnhubQuote(symbol, userEmail),
       TIMEOUT_MS
     );
     return data;
@@ -191,7 +205,8 @@ export async function buildContext(
   query: string,
   intent: Intent,
   entity: { symbol?: string } | null,
-  mode: Mode
+  mode: Mode,
+  userEmail?: string
 ): Promise<Partial<QueryContext>> {
   const context: Partial<QueryContext> = {
     query,
@@ -202,13 +217,24 @@ export async function buildContext(
   };
 
   if (!entity?.symbol) {
-    if (intent === "macro" || mode === "pro") {
-      const [news, searchResults] = await Promise.all([
+    // "How is the market today / top gainers" is a macro question with no
+    // ticker to hang a quote on. News and search answer the narrative; the
+    // screener answers the actual tape. The screener trigger is the query
+    // wording, not the intent label: "top gainers today" classifies as
+    // `general`, and gating the branch on `macro` dropped the pulse data for
+    // every phrasing the classifier did not happen to call macro.
+    const pulseScreen = detectPulseScreen(query);
+
+    if (intent === "macro" || mode === "pro" || pulseScreen) {
+      const [news, searchResults, pulse] = await Promise.all([
         fetchGeneralNews(),
         webSearch(query, mode),
+        pulseScreen ? withTimeout(getMarketPulse(pulseScreen, 15), PULSE_TIMEOUT_MS) : Promise.resolve(null),
       ]);
       context.news = news;
       context.searchResults = searchResults;
+      context.marketPulse =
+        pulseScreen && pulse && pulse.length > 0 ? { screen: pulseScreen, quotes: pulse } : null;
       if (news.length > 0) {
         context.sentiment = await analyzeSentiment(news.map((n) => n.headline));
       }
@@ -224,7 +250,7 @@ export async function buildContext(
       id: "price",
       priority: 1,
       timeoutMs: 1300,
-      task: () => fetchPriceData(entity.symbol!),
+      task: () => fetchPriceData(entity.symbol!, userEmail),
     },
     {
       id: "profile",
@@ -325,7 +351,8 @@ export async function buildMultiStockContext(
   query: string,
   intent: Intent,
   symbols: string[],
-  mode: Mode
+  mode: Mode,
+  userEmail?: string
 ): Promise<Partial<QueryContext>> {
   const context: Partial<QueryContext> = {
     query,
@@ -347,7 +374,7 @@ export async function buildMultiStockContext(
       id: `price:${symbol}`,
       priority: 1,
       timeoutMs: 1300,
-      task: () => fetchPriceData(symbol),
+      task: () => fetchPriceData(symbol, userEmail),
     });
     tasks.push({
       id: `metrics:${symbol}`,

@@ -105,6 +105,17 @@ export interface QueryContext {
   technicalIndicators?: TechnicalIndicatorsData | null;
   portfolio?: WatchlistItem[];
   events?: string[];
+  marketPulse?: {
+    screen: string;
+    quotes: Array<{
+      symbol: string;
+      name: string;
+      price: number;
+      changePercent: number;
+      volume: number;
+      marketCap: number | null;
+    }>;
+  } | null;
   multiStockData?: Record<string, {
     price?: PriceData | null;
     metrics?: FinancialMetrics | null;
