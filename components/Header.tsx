@@ -17,6 +17,7 @@ export async function Header({ user }: { user: User | null }) {
             alt="TradXpert"
             width={800}
             height={1024}
+            priority
             className={`w-auto cursor-pointer ${user ? "h-8" : "h-6"}`}
           />
         </Link>
