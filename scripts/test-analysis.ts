@@ -1200,15 +1200,15 @@ check("mapNseSearchResults keeps symbol rows only", () => {
 });
 
 check("mapNseSymbolList ranks prefix matches ahead of substring matches", () => {
-  const master = ["SWARAJENG", "RELIANCE", "RELINFRA", "TCS", "RELIGARE", "IIFLREL"];
+  const master = ["HDFCBANK", "BANKBARODA", "TCS", "AXISBANK", "BANKINDIA"];
 
-  const results = mapNseSymbolList(master, "reli");
+  const results = mapNseSymbolList(master, "bank");
   assert(results.length === 4, "only symbols containing the query survive");
   assert(
-    results.map((r) => r.symbol).join(",") === "RELIANCE,RELIGARE,RELINFRA,IIFLREL",
-    "prefix matches rank above the substring match, then sort by length and alphabetically"
+    results.map((r) => r.symbol).join(",") === "BANKINDIA,BANKBARODA,AXISBANK,HDFCBANK",
+    "prefix matches rank above substring matches, then sort by length and alphabetically"
   );
-  assert(results[0].companyName === "RELIANCE", "companyName mirrors the symbol (master has no names)");
+  assert(results[0].companyName === "BANKINDIA", "companyName mirrors the symbol (master has no names)");
 
   const wrapped = mapNseSymbolList({ data: ["ITC", "ITCHOTELS"] }, "ITC");
   assert(wrapped.length === 2, "a { data: [...] } envelope is accepted too");
