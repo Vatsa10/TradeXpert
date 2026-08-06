@@ -51,5 +51,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Exclude Next internals AND any file with an extension (images, fonts,
+  // svg...) — the image optimizer fetches source files cookie-less, and the
+  // auth redirect was feeding it HTML instead of image bytes.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|svg|gif|webp|avif|ico|txt|xml|woff2?)$).*)"],
 };
