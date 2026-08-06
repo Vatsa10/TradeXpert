@@ -1,4 +1,4 @@
-import { Schema, model, models } from "mongoose";
+import { Schema, model, models, Model } from "mongoose";
 
 export interface IUserQuota {
   userEmail: string;
@@ -8,7 +8,10 @@ export interface IUserQuota {
 }
 
 const UserQuotaSchema = new Schema<IUserQuota>({
-  userEmail: { type: String, required: true, index: true },
+  // No standalone userEmail index: the compound {userEmail, date} index below
+  // already has userEmail as its prefix, so a separate one is dead weight on
+  // every write.
+  userEmail: { type: String, required: true },
   date: { type: String, required: true },
   standardCount: { type: Number, default: 0 },
   proCount: { type: Number, default: 0 },
@@ -16,6 +19,7 @@ const UserQuotaSchema = new Schema<IUserQuota>({
 
 UserQuotaSchema.index({ userEmail: 1, date: 1 }, { unique: true });
 
-const UserQuota = models.UserQuota || model("UserQuota", UserQuotaSchema);
+const UserQuota: Model<IUserQuota> =
+  (models.UserQuota as Model<IUserQuota>) || model<IUserQuota>("UserQuota", UserQuotaSchema);
 
 export default UserQuota;

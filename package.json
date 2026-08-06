@@ -10,7 +10,9 @@
     "test:db": "node scripts/test-db.mjs"
   },
   "dependencies": {
+    "@langchain/core": "^1.2.5",
     "@langchain/google-genai": "^2.1.26",
+    "@langchain/openai": "^1.5.6",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -27,6 +29,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.3.1",
     "inngest": "^4.0.5",
+    "kiteconnect": "^5.3.0",
     "langchain": "^1.2.37",
     "lucide-react": "^0.553.0",
     "mongodb": "^7.1.1",
