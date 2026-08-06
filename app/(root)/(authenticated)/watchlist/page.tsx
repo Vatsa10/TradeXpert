@@ -5,7 +5,8 @@ import SearchCommand from "@/components/SearchCommand";
 import { WatchlistTable } from "@/components/WatchlistTable";
 import { getWatchlistWithData } from "@/lib/actions/getWatchlistWithData.actions";
 
-
+// Session-scoped page (reads auth headers) — never statically renderable.
+export const dynamic = "force-dynamic";
 
 export default async function WatchlistPage() {
   const watchlist = await getWatchlistWithData();
