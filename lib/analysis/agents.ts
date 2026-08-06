@@ -6,6 +6,7 @@ import {
   QualitativeAnalysisSchema,
   InvestmentReportSchema
 } from "./types";
+import { compactForLLM, compactText } from "./compact-context";
 
 const model = "gemini-3.1-flash-lite-preview"; // Using 1.5 Pro for thorough analysis
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -44,7 +45,7 @@ export async function runQuantitativeAnalyst(stockData: string) {
   const structuredLlm = llm.withStructuredOutput(QuantitativeAnalysisSchema);
   const chain = prompt.pipe(structuredLlm);
 
-  return chain.invoke({ stock_data: stockData });
+  return chain.invoke({ stock_data: compactText(stockData) });
 }
 
 /**
@@ -75,7 +76,8 @@ export async function runQualitativeAnalyst(newsData: string) {
   const structuredLlm = llm.withStructuredOutput(QualitativeAnalysisSchema);
   const chain = prompt.pipe(structuredLlm);
 
-  return chain.invoke({ news_data: newsData });
+  const compactNews = typeof newsData === "string" ? compactText(newsData) : JSON.stringify(compactForLLM(newsData));
+  return chain.invoke({ news_data: compactNews });
 }
 
 /**
