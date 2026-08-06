@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Sparkles, Brain, Zap, Loader2, Trash2, MessageSquare } from "lucide-react";
+import { Send, Bot, User, Sparkles, Brain, Zap, Loader2, Trash2, MessageSquare, AlertTriangle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -26,6 +26,18 @@ interface Session {
   createdAt: string;
 }
 
+interface Quota {
+  standardCount: number;
+  proCount: number;
+  standardLimit: number;
+  proLimit: number;
+}
+
+interface Notice {
+  kind: "quota" | "network";
+  message: string;
+}
+
 export default function ChatPageClient() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -33,6 +45,7 @@ export default function ChatPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +77,7 @@ export default function ChatPageClient() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
@@ -73,22 +86,64 @@ export default function ChatPageClient() {
       content: input,
     };
 
+    const sentInput = input;
+
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    setNotice(null);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: input,
+          message: sentInput,
           mode,
           sessionId,
         }),
       });
 
-      const data = await res.json();
+      if (res.status === 429) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          quota?: Quota;
+        };
+        const q = body.quota;
+        const isPro = mode === "pro" || mode === "thinking";
+        const used = q ? (isPro ? q.proCount : q.standardCount) : undefined;
+        const limit = q ? (isPro ? q.proLimit : q.standardLimit) : undefined;
+
+        setNotice({
+          kind: "quota",
+          message:
+            used !== undefined && limit !== undefined
+              ? `Daily limit reached (${used}/${limit} ${
+                  isPro ? "Pro/Think" : "Normal"
+                } messages used). Try again tomorrow${
+                  isPro ? ", or switch to Normal mode." : "."
+                }`
+              : body.error || "Daily limit reached. Try again tomorrow.",
+        });
+        // Roll back the optimistic user bubble so the message isn't shown as sent.
+        setMessages((prev) => prev.slice(0, -1));
+        setInput(sentInput);
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data) {
+        setNotice({
+          kind: "network",
+          message:
+            (data && data.error) ||
+            "Something went wrong reaching the AI. Please try sending your message again.",
+        });
+        setMessages((prev) => prev.slice(0, -1));
+        setInput(sentInput);
+        return;
+      }
 
       if (data.response) {
         const assistantMessage: Message = {
@@ -104,13 +159,13 @@ export default function ChatPageClient() {
       }
     } catch (error) {
       console.error("Chat error:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, I encountered an error. Please try again.",
-        },
-      ]);
+      setNotice({
+        kind: "network",
+        message:
+          "Couldn't reach the server. Check your connection and press Retry.",
+      });
+      setMessages((prev) => prev.slice(0, -1));
+      setInput(sentInput);
     } finally {
       setIsLoading(false);
     }
@@ -337,6 +392,37 @@ export default function ChatPageClient() {
           </div>
 
           <div className="p-4 border-t border-zinc-800">
+            {notice && (
+              <div
+                role="status"
+                className={`mb-3 flex items-start gap-2 rounded-lg border p-3 text-sm ${
+                  notice.kind === "quota"
+                    ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                    : "bg-red-500/10 border-red-500/40 text-red-300"
+                }`}
+              >
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span className="flex-1">{notice.message}</span>
+                {notice.kind === "network" && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleSubmit(e)}
+                    disabled={isLoading || !input.trim()}
+                    className="shrink-0 underline underline-offset-2 hover:text-white disabled:opacity-50"
+                  >
+                    Retry
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setNotice(null)}
+                  className="shrink-0 text-zinc-500 hover:text-white"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="flex gap-2">
               <Input
                 ref={inputRef}
