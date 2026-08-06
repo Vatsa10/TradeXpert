@@ -6,6 +6,7 @@ import { orchestrateQuery, isModeValid } from "@/lib/chat/orchestrator";
 import { connectToDatabase } from "@/database/mongoose";
 import ChatSession, { IChatMessage } from "@/database/models/chat.model";
 import { Mode } from "@/lib/chat/types";
+import { checkAndIncrementQuota } from "@/lib/chat/quota";
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,7 +37,13 @@ export async function POST(request: NextRequest) {
 
     const userMode: Mode | undefined = isModeValid(mode) ? mode : undefined;
 
-    const result = await orchestrateQuery(message, userMode);
+    const quota = await checkAndIncrementQuota(session.user.email, userMode || "normal");
+    if (!quota.allowed) {
+      return NextResponse.json(
+        { error: quota.reason || "Daily quota exceeded", quota },
+        { status: 429 }
+      );
+    }
 
     await connectToDatabase();
 
@@ -48,6 +55,13 @@ export async function POST(request: NextRequest) {
         userEmail: session.user.email,
       });
     }
+
+    const priorHistory = (chatSession?.messages || []).map((m: IChatMessage) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const result = await orchestrateQuery(message, userMode, priorHistory);
 
     const userMessage: IChatMessage = {
       role: "user",

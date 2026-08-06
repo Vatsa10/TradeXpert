@@ -460,7 +460,8 @@ export async function generateLLMResponse(
   query: string,
   context: QueryContext,
   signals: SignalBundle | undefined,
-  mode: Mode
+  mode: Mode,
+  history: import("./context-history").ChatTurn[] = []
 ): Promise<LLMResponse> {
   const startTime = Date.now();
   const comparison = isComparisonQuery(query) || context.intent === "comparison";
@@ -474,8 +475,12 @@ export async function generateLLMResponse(
   const signalPrompt = signals
     ? `\nSIGNALS\n${signals.signals.map((s) => `- ${s.indicator}: ${s.signal} (${s.reasoning})`).join("\n")}\nOverall: ${signals.overallTrend}`
     : "";
+  const historyPrompt = history.length > 0
+    ? `\nCONVERSATION HISTORY (most relevant + recent turns, may include an [Earlier conversation...] summary line)\n${history.map((h) => `${h.role}: ${h.content}`).join("\n")}\n`
+    : "";
 
   const userPrompt = `
+${historyPrompt}
 Query: ${query}
 
 ${contextPrompt}

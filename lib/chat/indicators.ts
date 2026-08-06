@@ -1,4 +1,5 @@
 import { FinancialMetrics } from "./types";
+import { getLocalTechnicalIndicators } from "@/lib/analysis/technical-indicators";
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const TIMEOUT_MS = 800;
@@ -40,6 +41,11 @@ export async function getTechnicalIndicators(symbol: string): Promise<TechnicalI
     console.warn("Alpha Vantage API key not configured");
     return null;
   }
+
+  // Local computation from a single OHLCV fetch replaces 4 separate
+  // rate-limited AV indicator endpoint calls below when it succeeds.
+  const local = await getLocalTechnicalIndicators(symbol);
+  if (local) return local as TechnicalIndicators;
 
   try {
     const [rsiData, macdData, smaData, adxData] = await Promise.all([

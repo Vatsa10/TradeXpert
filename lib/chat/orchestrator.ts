@@ -7,6 +7,7 @@ import { webSearch } from "./search";
 import { generateLLMResponse, transformForMarkdown } from "./response";
 import { shouldEarlyExit, isWithinBudget } from "./early-exit";
 import { clearRequestCache } from "./cache";
+import { packContextMessages, ChatTurn } from "./context-history";
 
 function resolveMode(
   query: string,
@@ -54,10 +55,13 @@ function getExecutionMetrics(
 
 export async function orchestrateQuery(
   query: string,
-  userMode?: Mode
+  userMode?: Mode,
+  history: ChatTurn[] = []
 ): Promise<FlowResult> {
   const startTime = Date.now();
   clearRequestCache();
+
+  const packedHistory = history.length > 0 ? packContextMessages(history, query) : [];
 
   const intent = classifyIntent(query);
   const allSymbols = extractAllSymbols(query);
@@ -106,7 +110,7 @@ export async function orchestrateQuery(
     context.sentiment?.overallSentiment || "neutral"
   );
 
-  const llmResponse = await generateLLMResponse(query, context as QueryContext, signals, mode);
+  const llmResponse = await generateLLMResponse(query, context as QueryContext, signals, mode, packedHistory);
 
   const markdownContent = transformForMarkdown(llmResponse, context as QueryContext);
 
