@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       content: m.content,
     }));
 
-    const result = await orchestrateQuery(message, userMode, priorHistory);
+    const result = await orchestrateQuery(message, userMode, priorHistory, session.user.email);
 
     const userMessage: IChatMessage = {
       role: "user",

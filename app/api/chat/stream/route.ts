@@ -5,6 +5,7 @@ import { orchestrateQuery, isModeValid } from "@/lib/chat/orchestrator";
 import { connectToDatabase } from "@/database/mongoose";
 import ChatSession, { IChatMessage } from "@/database/models/chat.model";
 import { Mode } from "@/lib/chat/types";
+import { checkAndIncrementQuota } from "@/lib/chat/quota";
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,6 +39,31 @@ export async function POST(request: NextRequest) {
 
     const userMode: Mode | undefined = isModeValid(mode) ? mode : undefined;
 
+    const quota = await checkAndIncrementQuota(session.user.email, userMode || "normal");
+    if (!quota.allowed) {
+      return new Response(
+        JSON.stringify({ error: quota.reason || "Daily quota exceeded", quota }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    await connectToDatabase();
+
+    // Load the existing session up front so prior turns can be packed into the
+    // orchestrator context (the non-streaming route already does this).
+    let existingSession = null;
+    if (sessionId) {
+      existingSession = await ChatSession.findOne({
+        _id: sessionId,
+        userEmail: session.user.email,
+      });
+    }
+
+    const priorHistory = (existingSession?.messages || []).map((m: IChatMessage) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
@@ -45,7 +71,7 @@ export async function POST(request: NextRequest) {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ stage: "analyzing", message: "Analyzing query..." })}\n\n`));
 
-          const result = await orchestrateQuery(message, userMode);
+          const result = await orchestrateQuery(message, userMode, priorHistory, session.user.email);
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ stage: "complete", message: "Analysis complete" })}\n\n`));
 
@@ -61,16 +87,7 @@ export async function POST(request: NextRequest) {
             sessionId: null as string | null,
           };
 
-          await connectToDatabase();
-
-          let chatSession;
-
-          if (sessionId) {
-            chatSession = await ChatSession.findOne({
-              _id: sessionId,
-              userEmail: session.user.email,
-            });
-          }
+          const chatSession = existingSession;
 
           const userMessage: IChatMessage = {
             role: "user",
@@ -96,14 +113,14 @@ export async function POST(request: NextRequest) {
           } else {
             const title = message.substring(0, 50) + (message.length > 50 ? "..." : "");
 
-            chatSession = new ChatSession({
+            const newSession = new ChatSession({
               userEmail: session.user.email,
               title,
               messages: [userMessage, assistantMessage],
               mode: result.mode,
             });
-            await chatSession.save();
-            responseData.sessionId = chatSession._id.toString();
+            await newSession.save();
+            responseData.sessionId = newSession._id.toString();
           }
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ stage: "final", ...responseData })}\n\n`));
