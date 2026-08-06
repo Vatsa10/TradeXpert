@@ -41,3 +41,11 @@ yarn-error.log*
 next-env.d.ts
 todo.md
 prompts.md
+# donor/reference repos (separate git clones, not part of this app)
+cfa-agent-langgraph/
+intraday-stock-targets/
+india-trade-cli/
+mftool/
+nse-bse-indian-stock-market-data-mcp/
+NSE-Neuron/
+NSE_AI_/
