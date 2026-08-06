@@ -1,3 +1,4 @@
+import KiteConnectButton from "@/components/KiteConnectButton";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import {
   HEATMAP_WIDGET_CONFIG,
@@ -11,6 +12,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col home-wrapper">
+      <div className="mb-6 flex justify-end">
+        <KiteConnectButton />
+      </div>
+
       <section className="grid w-full gap-8 home-section mb-10">
         <div className="md:col-span-1 xl:col-span-1">
           <TradingViewWidget
