@@ -2,6 +2,7 @@
 import { fetchJSON } from "../actions/finnhub.actions";
 import { getDateRange } from "../utils";
 import { getCacheKey, getOrFetch, getTTL } from "./cache";
+import { getIndianStockQuote, isLikelyIndianTicker } from "@/lib/data/providers/nse-india";
 
 const FINNHUB_BASE_URL = "https://finnhub.io/api/v1";
 const FINNHUB_TOKEN = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
@@ -65,6 +66,23 @@ async function withTimeout<T>(
 }
 
 export async function getFinnhubQuote(symbol: string) {
+  // India-listed tickers (.NS/.BO) aren't covered by Finnhub/Alpha Vantage's
+  // free tiers — route them to the free NSE/BSE data source instead.
+  if (isLikelyIndianTicker(symbol)) {
+    const indian = await getIndianStockQuote(symbol);
+    if (indian) {
+      return {
+        current: indian.lastPrice,
+        change: indian.change,
+        changePercent: indian.percentChange,
+        high: indian.dayHigh,
+        low: indian.dayLow,
+        open: indian.open,
+        prevClose: indian.previousClose,
+      };
+    }
+  }
+
   if (!FINNHUB_TOKEN) {
     return await getAlphaVantageQuote(symbol);
   }

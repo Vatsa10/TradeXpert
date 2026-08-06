@@ -4,6 +4,7 @@ import { Advice, LLMResponse, Mode, QueryContext, SignalBundle, Source, Trend } 
 import { assessDataQuality } from "./context-builder";
 import { calibrateConfidence, getDataQuality } from "./confidence";
 import { setCooldown, withRateLimit } from "./rate-limiter";
+import { parseLLMJson } from "./schemas";
 
 const fastLLM = new ChatGoogleGenerativeAI({
   model: "gemini-3.1-flash-lite-preview",
@@ -208,25 +209,21 @@ function buildContextPrompt(context: QueryContext): string {
 
 function parseJSONResponse(raw: string): Partial<LLMResponse> | null {
   const content = typeof raw === "string" ? raw : String(raw || "");
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) return null;
 
-  try {
-    const parsed = llmOutputSchema.safeParse(JSON.parse(match[0]));
-    if (!parsed.success) return null;
+  // 3-tier parse (direct JSON -> extracted JSON block -> fallback), ported
+  // from india-trade-cli's agent/schema_parser.py.
+  const { data, tier } = parseLLMJson(content, llmOutputSchema, null as any);
+  if (tier === "fallback" || !data) return null;
 
-    return {
-      summary: parsed.data.summary,
-      trend: parsed.data.trend,
-      reasoning: parsed.data.reasoning,
-      advice: parsed.data.advice,
-      recommendation: parsed.data.recommendation,
-      confidence: parsed.data.confidence,
-      signalTrace: parsed.data.signalTrace,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    summary: data.summary,
+    trend: data.trend,
+    reasoning: data.reasoning,
+    advice: data.advice,
+    recommendation: data.recommendation,
+    confidence: data.confidence,
+    signalTrace: data.signalTrace,
+  };
 }
 
 function buildFallbackReasoning(context: QueryContext): string[] {
