@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 
 import { auth as authInstance } from "@/lib/better-auth/auth";
-import { getKiteSessionStatus, isKiteConfigured } from "@/lib/kite/client";
+import { getKiteSessionStatus, isKiteConfigured, isKiteOwner } from "@/lib/kite/client";
 
 export async function GET() {
   try {
@@ -15,7 +15,8 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const configured = isKiteConfigured();
+    // Non-owners see Kite as unconfigured — it's a personal integration.
+    const configured = isKiteConfigured() && isKiteOwner(session.user.email);
     if (!configured) {
       return NextResponse.json({
         configured: false,

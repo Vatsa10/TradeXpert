@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 
 import { auth as authInstance } from "@/lib/better-auth/auth";
-import { KITE_NOT_CONFIGURED_MESSAGE, isKiteConfigured, kiteLoginUrl } from "@/lib/kite/client";
+import { KITE_NOT_CONFIGURED_MESSAGE, isKiteConfigured, isKiteOwner, kiteLoginUrl } from "@/lib/kite/client";
 
 export async function GET() {
   try {
@@ -13,6 +13,10 @@ export async function GET() {
     const session = await authInstance.api.getSession({ headers: await headers() });
     if (!session || !session.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!isKiteOwner(session.user.email)) {
+      return NextResponse.json({ error: "Kite is a personal integration on this deployment" }, { status: 403 });
     }
 
     if (!isKiteConfigured()) {

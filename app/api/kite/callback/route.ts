@@ -5,7 +5,7 @@ import { auth as authInstance } from "@/lib/better-auth/auth";
 import { connectToDatabase } from "@/database/mongoose";
 import { KiteSession } from "@/database/models/kite-session.model";
 import { encryptToken, isTokenEncryptionAvailable } from "@/lib/kite/crypto";
-import { createKiteClient, isKiteConfigured } from "@/lib/kite/client";
+import { createKiteClient, isKiteConfigured, isKiteOwner } from "@/lib/kite/client";
 
 /**
  * Zerodha redirects the browser here with ?request_token=... after login, so
@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const session = await authInstance.api.getSession({ headers: await headers() });
     if (!session?.user?.email) return back("error", "unauthorized");
 
+    if (!isKiteOwner(session.user.email)) return back("error", "not_owner");
     if (!isKiteConfigured()) return back("error", "not_configured");
     if (!isTokenEncryptionAvailable()) return back("error", "no_token_secret");
 

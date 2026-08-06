@@ -15,6 +15,15 @@ export function isKiteConfigured(): boolean {
   return Boolean(process.env.KITE_API_KEY?.trim() && process.env.KITE_API_SECRET?.trim());
 }
 
+// Kite is a PERSONAL broker integration: when KITE_OWNER_EMAIL is set, only
+// that account may connect or consume Kite data — everyone else silently uses
+// the public NSE/BSE providers instead.
+export function isKiteOwner(userEmail: string | null | undefined): boolean {
+  const owner = process.env.KITE_OWNER_EMAIL?.trim().toLowerCase();
+  if (!owner) return true; // unset = single-user/dev deployment, no gating
+  return !!userEmail && userEmail.trim().toLowerCase() === owner;
+}
+
 /**
  * A bare, unauthenticated client — enough for the login URL / token exchange.
  * Returns null when env keys are missing so callers degrade instead of throwing.
@@ -76,7 +85,7 @@ export async function getKiteSessionStatus(userEmail: string): Promise<KiteSessi
  * connected, the daily token has expired, or the ciphertext no longer decrypts.
  */
 export async function getKiteForUser(userEmail: string): Promise<KiteClient | null> {
-  if (!isKiteConfigured() || !userEmail) return null;
+  if (!isKiteConfigured() || !userEmail || !isKiteOwner(userEmail)) return null;
 
   try {
     await connectToDatabase();

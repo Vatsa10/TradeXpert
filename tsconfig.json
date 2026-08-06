@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "cfa-agent-langgraph", "intraday-stock-targets", "india-trade-cli", "mftool", "nse-bse-indian-stock-market-data-mcp"]
+  "exclude": ["node_modules", "cfa-agent-langgraph", "intraday-stock-targets", "india-trade-cli", "mftool", "nse-bse-indian-stock-market-data-mcp", "NSE-Neuron", "NSE_AI_"]
 }
