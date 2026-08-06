@@ -31,29 +31,45 @@ export async function POST(request: NextRequest) {
       corporateTaxRate = INDIA_DCF_DEFAULTS.corporateTaxRate,
     } = body;
 
-    if (typeof currentFCF !== "number" || typeof sharesOutstanding !== "number") {
+    // typeof NaN === "number", so a NaN/Infinity slipping through here would
+    // propagate silently into every projection and out to the client.
+    if (!Number.isFinite(currentFCF) || !Number.isFinite(sharesOutstanding) || sharesOutstanding <= 0) {
       return NextResponse.json(
-        { error: "currentFCF and sharesOutstanding are required numbers" },
+        { error: "currentFCF must be a finite number and sharesOutstanding a positive finite number" },
+        { status: 400 }
+      );
+    }
+
+    const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+    if (
+      !isFiniteNumber(riskFreeRate) ||
+      !isFiniteNumber(equityRiskPremium) ||
+      !isFiniteNumber(terminalGrowthRate) ||
+      !isFiniteNumber(corporateTaxRate)
+    ) {
+      return NextResponse.json(
+        { error: "riskFreeRate, equityRiskPremium, terminalGrowthRate and corporateTaxRate must be finite numbers" },
         { status: 400 }
       );
     }
 
     const waccResult = computeWACC({
       riskFreeRate,
-      beta: typeof beta === "number" ? beta : 1,
+      beta: isFiniteNumber(beta) ? beta : 1,
       equityRiskPremium,
-      costOfDebt: typeof costOfDebt === "number" ? costOfDebt : 8,
+      costOfDebt: isFiniteNumber(costOfDebt) ? costOfDebt : 8,
       corporateTaxRate,
-      debtToEquity: typeof debtToEquity === "number" ? debtToEquity : 0,
+      debtToEquity: isFiniteNumber(debtToEquity) ? debtToEquity : 0,
     });
 
     const dcfInput = {
       currentFCF,
-      growthRateStage1: typeof growthRateStage1 === "number" ? growthRateStage1 : 12,
-      growthRateStage2: typeof growthRateStage2 === "number" ? growthRateStage2 : 6,
+      growthRateStage1: isFiniteNumber(growthRateStage1) ? growthRateStage1 : 12,
+      growthRateStage2: isFiniteNumber(growthRateStage2) ? growthRateStage2 : 6,
       terminalGrowthRate,
       wacc: waccResult.wacc,
-      netDebt: typeof netDebt === "number" ? netDebt : 0,
+      netDebt: isFiniteNumber(netDebt) ? netDebt : 0,
       sharesOutstanding,
     };
 

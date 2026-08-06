@@ -16,13 +16,54 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
 
+    // `Number(x) || fallback` swallows legitimate zeros (winRate: 0 silently
+    // became 0.5), so fall back only when the value is genuinely absent/invalid.
+    const num = (value: unknown, fallback: number): number => {
+      const n = Number(value);
+      return value === null || value === undefined || value === "" || !Number.isFinite(n)
+        ? fallback
+        : n;
+    };
+
+    // Out-of-range inputs used to be clamped, which turned nonsense like
+    // winRate: 999 into a confident 100%-win simulation. Reject them instead.
+    const startingCapital = num(body.startingCapital, 10000);
+    const winRate = num(body.winRate, 0.5);
+    const rewardRiskRatio = num(body.rewardRiskRatio, 2);
+    const riskPct = num(body.riskPct, 0.01);
+    const tradeCount = num(body.tradeCount, 100);
+    const numSimulations = num(body.numSimulations, 1000);
+    const ruinThreshold = num(body.ruinThreshold, 0.5);
+
+    const invalid =
+      startingCapital <= 0
+        ? "startingCapital must be greater than zero"
+        : winRate < 0 || winRate > 1
+          ? "winRate must be a fraction between 0 and 1"
+          : riskPct < 0 || riskPct > 1
+            ? "riskPct must be a fraction between 0 and 1"
+            : rewardRiskRatio <= 0
+              ? "rewardRiskRatio must be greater than zero"
+              : tradeCount < 1 || tradeCount > 2000
+                ? "tradeCount must be between 1 and 2000"
+                : numSimulations < 1 || numSimulations > 5000
+                  ? "numSimulations must be between 1 and 5000"
+                  : ruinThreshold < 0 || ruinThreshold >= 1
+                    ? "ruinThreshold must be a fraction between 0 and 1 (exclusive)"
+                    : null;
+
+    if (invalid) {
+      return NextResponse.json({ error: invalid }, { status: 422 });
+    }
+
     const params: MonteCarloParams = {
-      startingCapital: Number(body.startingCapital) || 10000,
-      winRate: Math.min(1, Math.max(0, Number(body.winRate) || 0.5)),
-      rewardRiskRatio: Number(body.rewardRiskRatio) || 2,
-      riskPct: Math.min(1, Math.max(0, Number(body.riskPct) || 0.01)),
-      tradeCount: Math.min(2000, Math.max(1, Number(body.tradeCount) || 100)),
-      numSimulations: Math.min(5000, Math.max(1, Number(body.numSimulations) || 1000)),
+      startingCapital,
+      winRate,
+      rewardRiskRatio,
+      riskPct,
+      tradeCount: Math.floor(tradeCount),
+      numSimulations: Math.floor(numSimulations),
+      ruinThreshold,
     };
 
     const result = runMonteCarlo(params);
