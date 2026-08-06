@@ -47,7 +47,16 @@ function Reveal({
       { rootMargin: "0px 0px -12% 0px", threshold: 0.05 },
     );
     io.observe(el);
-    return () => io.disconnect();
+
+    // Fail-open: content must never stay clipped if the observer misses
+    // (zoom levels, odd viewports, observer quirks). Reveal is decoration,
+    // visibility is not negotiable.
+    const failOpen = window.setTimeout(() => setVisible(true), 2500);
+
+    return () => {
+      io.disconnect();
+      window.clearTimeout(failOpen);
+    };
   }, []);
 
   return (
