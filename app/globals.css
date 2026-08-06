@@ -634,3 +634,147 @@ button:disabled {
   background-color: #9095a1;
 }
 
+
+/* ============================================================
+   LANDING PAGE — "Creamy" editorial design system
+   Scoped under .lp so it never leaks into the dark app shell.
+   ============================================================ */
+
+/* Missing keyframes referenced by the .animate-in utilities above.
+   Without these, animation-name resolved to nothing and the
+   entrance utilities silently did nothing app-wide. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInFromBottom {
+  from { opacity: 0; transform: translateY(1.25rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+:root {
+  /* Strong custom easings — the built-in CSS easings are too weak. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* Cream palette */
+  --lp-cream: #faf7f2;
+  --lp-cream-deep: #f3ede3;
+  --lp-ink: #17130e;
+  --lp-ink-soft: #4d443a;
+  --lp-ink-faint: #8a7f71;
+  --lp-amber: #e8ba40;
+  --lp-amber-deep: #b8801a;
+  --lp-hairline: rgba(23, 19, 14, 0.08);
+}
+
+/* Paint the document background cream while the landing page is mounted,
+   so overscroll / rubber-banding doesn't reveal the dark app background. */
+body:has(.lp) {
+  background: var(--lp-cream);
+}
+
+.lp {
+  background: var(--lp-cream);
+  color: var(--lp-ink);
+  /* `overflow-x: hidden` would compute overflow-y to `auto`, turning this
+     element into a scroll container. Use `clip` — no scroll container. */
+  overflow-x: clip;
+}
+
+.lp-serif {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Georgia, ui-serif, serif;
+  font-feature-settings: "liga" 1, "kern" 1;
+}
+
+.lp-mono {
+  font-family: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Warm paper grain — sits above the mesh, below the content. */
+.lp-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  opacity: 0.14;
+}
+
+/* --- Soft elevation, never borders --- */
+.lp-shadow-sm { box-shadow: 0 1px 2px rgba(23, 19, 14, 0.04), 0 4px 12px -4px rgba(23, 19, 14, 0.06); }
+.lp-shadow-md { box-shadow: 0 2px 4px rgba(23, 19, 14, 0.04), 0 12px 32px -12px rgba(23, 19, 14, 0.12); }
+.lp-shadow-lg { box-shadow: 0 4px 8px rgba(23, 19, 14, 0.04), 0 32px 80px -24px rgba(23, 19, 14, 0.22); }
+
+/* --- Entrance: @starting-style, no JS, runs off the main thread --- */
+.lp-enter {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 620ms var(--ease-out-strong),
+    transform 620ms var(--ease-out-strong);
+  transition-delay: calc(var(--lp-i, 0) * 60ms);
+}
+@starting-style {
+  .lp-enter {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* --- Scroll reveal: clip-path inset, driven by IntersectionObserver --- */
+.lp-reveal {
+  clip-path: inset(0 0 0 0);
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    clip-path 900ms var(--ease-out-strong),
+    transform 900ms var(--ease-out-strong),
+    opacity 420ms var(--ease-out-strong);
+  transition-delay: calc(var(--lp-i, 0) * 70ms);
+  will-change: clip-path, transform;
+}
+.lp-reveal[data-visible="false"] {
+  clip-path: inset(0 0 100% 0);
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+/* --- Pressables --- */
+.lp-press {
+  transition:
+    transform 160ms var(--ease-out-strong),
+    background-color 200ms ease,
+    color 200ms ease,
+    box-shadow 200ms ease;
+}
+.lp-press:active { transform: scale(0.97); }
+
+@media (hover: hover) and (pointer: fine) {
+  .lp-card { transition: transform 240ms var(--ease-out-strong), box-shadow 240ms var(--ease-out-strong); }
+  .lp-card:hover { transform: translateY(-4px); }
+  .lp-shot img { transition: transform 400ms var(--ease-out-strong); }
+  .lp-card:hover .lp-shot img { transform: scale(1.02); }
+  .lp-arrow { transition: transform 200ms var(--ease-out-strong); }
+  .lp-press:hover .lp-arrow { transform: translateX(3px); }
+}
+
+/* Marquee for the data-source strip: constant motion => linear. */
+@keyframes lp-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.lp-marquee { animation: lp-marquee 38s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-enter,
+  .lp-reveal,
+  .lp-reveal[data-visible="false"] {
+    transform: none;
+    clip-path: none;
+    opacity: 1;
+    transition: opacity 200ms ease;
+    transition-delay: 0ms;
+  }
+  .lp-marquee { animation: none; }
+  .lp-card:hover { transform: none; }
+}

@@ -1200,14 +1200,13 @@ check("mapNseSearchResults keeps symbol rows only", () => {
 });
 
 check("mapNseSymbolList ranks prefix matches ahead of substring matches", () => {
-  const master = ["SWARAJENG", "RELIANCE", "RELINFRA", "TCS", "RELIGARE"];
+  const master = ["SWARAJENG", "RELIANCE", "RELINFRA", "TCS", "RELIGARE", "IIFLREL"];
 
   const results = mapNseSymbolList(master, "reli");
-  assert(results.length === 3, "only symbols containing the query survive");
-  assert(results[0].symbol === "RELIANCE", "shortest prefix match ranks first");
+  assert(results.length === 4, "only symbols containing the query survive");
   assert(
-    results.map((r) => r.symbol).join(",") === "RELIANCE,RELINFRA,RELIGARE",
-    "prefix matches sort by length, and nothing non-matching leaks in"
+    results.map((r) => r.symbol).join(",") === "RELIANCE,RELIGARE,RELINFRA,IIFLREL",
+    "prefix matches rank above the substring match, then sort by length and alphabetically"
   );
   assert(results[0].companyName === "RELIANCE", "companyName mirrors the symbol (master has no names)");
 
