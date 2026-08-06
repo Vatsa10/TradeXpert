@@ -1,186 +1,355 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
-import { Github, Play, ArrowRight, TrendingUp, Search, Bell, BarChart3, ShieldCheck, Zap, Globe } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Github,
+  MessageSquareText,
+  Sigma,
+  LineChart,
+} from "lucide-react";
 
-const LandingPage = () => {
-  const GITHUB_REPO = "https://github.com/Vatsa10/TradeXpert";
+const GITHUB_REPO = "https://github.com/Vatsa10/TradeXpert";
+
+/* ------------------------------------------------------------------ */
+/* Scroll reveal — IntersectionObserver drives a clip-path inset()     */
+/* transition. CSS does the animating, so it stays off the main thread.*/
+/* ------------------------------------------------------------------ */
+function Reveal({
+  children,
+  index = 0,
+  className = "",
+}: {
+  children: ReactNode;
+  index?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "0px 0px -12% 0px", threshold: 0.05 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   return (
-    <div className="relative flex flex-col w-full bg-[#030303] overflow-x-hidden pt-10">
-      {/* MESH BACKGROUND LAYER */}
-      <div className="absolute inset-0 z-0 opacity-40 mix-blend-screen pointer-events-none overflow-hidden h-[120vh]">
-        <Image 
-          src="/landing/mesh-bg.png"
-          alt="Futuristic Background"
+    <div
+      ref={ref}
+      data-visible={visible}
+      className={`lp-reveal ${className}`}
+      style={{ "--lp-i": index } as React.CSSProperties}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+const SOURCES = [
+  "NSE",
+  "BSE",
+  "Zerodha Kite Connect",
+  "Quarterly results",
+  "Corporate actions",
+  "Finnhub",
+  "Google Gemini",
+  "FII / DII flows",
+  "Nifty 50 · Bank Nifty",
+  "Company filings",
+];
+
+const FEATURES = [
+  {
+    icon: MessageSquareText,
+    kicker: "01 — Chat analyst",
+    title: "Ask in plain English. Get the filing.",
+    body: "“Why did HDFC Bank fall this week?” “Compare Tata Motors and M&M on margins.” The analyst reads live NSE and BSE prices, quarterly results and corporate actions, then answers with the numbers it used — and links back to them.",
+    image: "/landing/dashboard-real-1.png",
+    alt: "TradXpert AI chat analyst answering a question about an Indian equity",
+  },
+  {
+    icon: Sigma,
+    kicker: "02 — Quant desk",
+    title: "DCF, ratios and portfolio risk, already done.",
+    body: "Intrinsic value with editable assumptions, a full ratio sheet across five years, sector heatmaps, and concentration and drawdown checks on your actual holdings. The work an analyst does in a spreadsheet — without the spreadsheet.",
+    image: "/landing/dashboard-real-2.png",
+    alt: "Valuation and portfolio analytics dashboard with sector heatmap",
+  },
+  {
+    icon: LineChart,
+    kicker: "03 — Paper trading",
+    title: "Trade the thesis before you risk the capital.",
+    body: "Place the position on paper at live market prices, track P&L through the 9:15–15:30 session, and review what the idea actually earned. Connect Zerodha Kite when you're ready to take it live.",
+    image: "/landing/dashboard-real-3.png",
+    alt: "Paper trading positions and profit and loss view",
+  },
+];
+
+const STATS = [
+  { value: "NSE + BSE", label: "Both exchanges, one workspace" },
+  { value: "9:15–15:30", label: "Live through the IST session" },
+  { value: "₹0", label: "To open an account and start" },
+];
+
+const LandingPage = () => {
+  return (
+    <div className="lp relative flex w-full flex-col">
+      {/* ---------- Atmosphere: warm mesh + paper grain ---------- */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[110vh] overflow-hidden">
+        <Image
+          src="/landing/mesh-bg.jpg"
+          alt=""
+          aria-hidden
           fill
-          className="object-cover scale-110 blur-xl animate-pulse duration-[8000ms]"
           priority
+          sizes="100vw"
+          className="scale-125 object-cover opacity-[0.28] blur-3xl saturate-150"
         />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#faf7f2]/40 via-[#faf7f2]/80 to-[#faf7f2]" />
       </div>
+      <div className="lp-grain pointer-events-none absolute inset-0 z-0" />
 
-      <div className="absolute top-0 left-0 w-full h-[150vh] bg-gradient-to-b from-black/0 via-[#030303]/80 to-[#030303] z-0 pointer-events-none" />
-
-      {/* HERO SECTION */}
-      <section className="relative z-10 container mx-auto px-6 py-20 flex flex-col items-center text-center">
-        <div className="animate-in fade-in slide-in-from-bottom-5 duration-1000">
-          <div className="inline-flex items-center gap-2.5 px-4 py-1.5 mb-8 text-xs font-bold tracking-widest uppercase text-yellow-500 bg-yellow-400/5 border border-yellow-400/10 rounded-full">
-            <Zap size={14} className="fill-yellow-500 animate-pulse" />
-            <span>REAL-TIME INTELLIGENCE • v1.02</span>
-          </div>
-
-          <h1 className="text-6xl md:text-9xl font-black tracking-tighter text-white mb-8 leading-[1]">
-             TRADING AT THE <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 via-yellow-400 to-orange-600">
-              SPEED OF LIGHT.
-            </span>
-          </h1>
-
-          <p className="text-gray-400 text-lg md:text-xl font-medium max-w-2xl mx-auto mb-12 leading-relaxed opacity-80">
-            Institutional power, democratized for the next-gen investor. 
-            Real-time <span className="text-white">Finnhub</span> data meets advanced <span className="text-yellow-500">AI analysis</span>.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-32">
-            <Link href="/sign-up">
-              <button className="group h-16 px-10 bg-yellow-500 hover:bg-white text-black font-bold rounded-2xl flex items-center gap-3 transition-all duration-300 hover:scale-[1.03] active:scale-95 shadow-2xl shadow-yellow-500/20">
-                START TRADING
-                <ArrowRight size={20} className="group-hover:translate-x-1 duration-300" />
-              </button>
-            </Link>
-            <Link href={GITHUB_REPO} target="_blank">
-              <button className="h-16 px-10 glassmorphism-btn border border-white/10 hover:border-white/20 text-white font-bold rounded-2xl flex items-center gap-3 transition-all duration-300 hover:scale-[1.03] active:scale-95">
-                <Github size={20} />
-                SOURCE CODE
-              </button>
-            </Link>
-          </div>
+      {/* ================= HERO ================= */}
+      <section className="relative z-10 mx-auto w-full max-w-6xl px-6 pt-36 pb-20 md:pt-44">
+        <div className="lp-enter" style={{ "--lp-i": 0 } as React.CSSProperties}>
+          <span className="lp-mono inline-flex items-center gap-2.5 rounded-full bg-white/70 px-3.5 py-1.5 text-[11px] tracking-[0.18em] text-[color:var(--lp-ink-soft)] uppercase lp-shadow-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--lp-amber-deep)]" />
+            India-first equity research
+          </span>
         </div>
 
-        {/* SHOWCASE SECTION - REAL IMAGES WITH SCROLL EFFECT */}
-        <div className="flex flex-col gap-20 w-full max-w-6xl mx-auto mb-40">
-           <div className="scroll-reveal animate-in fade-in slide-in-from-bottom-10 relative z-10 p-1 glassmorphism border border-white/10 rounded-[32px] overflow-hidden group">
-             <div className="absolute inset-0 bg-yellow-500/5 group-hover:bg-yellow-500/10 transition-colors pointer-events-none z-10" />
-             <Image 
-                src="/landing/dashboard-real-1.png"
-                alt="Dashboard Overview"
-                width={1920}
-                height={1080}
-                className="rounded-3xl w-full h-auto object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
-             />
-             <div className="absolute bottom-6 left-6 z-20 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 text-white text-xs font-bold tracking-widest uppercase">
-               MARKET OVERVIEW HUB
-             </div>
-           </div>
+        <h1
+          className="lp-serif lp-enter mt-8 max-w-4xl text-[clamp(2.75rem,7.2vw,5.5rem)] leading-[0.98] font-normal tracking-[-0.025em] text-balance"
+          style={{ "--lp-i": 1 } as React.CSSProperties}
+        >
+          Research Indian equities
+          <br className="hidden sm:block" /> like a{" "}
+          <em className="text-[color:var(--lp-amber-deep)] italic">fund</em>.
+          <span className="text-[color:var(--lp-ink-faint)]"> Not a forum.</span>
+        </h1>
 
-           <div className="scroll-reveal animate-in fade-in slide-in-from-bottom-10 relative z-10 p-1 glassmorphism border border-white/10 rounded-[32px] overflow-hidden group">
-             <Image 
-                src="/landing/dashboard-real-2.png"
-                alt="Heatmap & Analytics"
-                width={1920}
-                height={1080}
-                className="rounded-3xl w-full h-auto object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
-             />
-             <div className="absolute top-6 right-6 z-20 bg-yellow-500 text-black px-4 py-2 rounded-xl font-bold text-xs tracking-widest uppercase">
-               LIVE HEATMAPS
-             </div>
-           </div>
+        <p
+          className="lp-enter mt-8 max-w-xl text-[1.0625rem] leading-[1.65] text-[color:var(--lp-ink-soft)] md:text-lg"
+          style={{ "--lp-i": 2 } as React.CSSProperties}
+        >
+          TradXpert is an AI analyst built for NSE and BSE. It reads prices,
+          results and filings, runs the valuation, watches your portfolio&apos;s
+          risk — and lets you paper trade the idea before a single rupee moves.
+        </p>
 
-           <div className="scroll-reveal animate-in fade-in slide-in-from-bottom-10 relative z-10 p-1 glassmorphism border border-white/10 rounded-[32px] overflow-hidden group">
-             <Image 
-                src="/landing/dashboard-real-3.png"
-                alt="Detailed View"
-                width={1920}
-                height={1080}
-                className="rounded-3xl w-full h-auto object-cover transition-transform duration-1000 group-hover:scale-[1.02]"
-             />
-             <div className="absolute bottom-6 right-6 z-20 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 text-white text-xs font-bold tracking-widest uppercase">
-               DEEP ANALYSIS
-             </div>
-           </div>
+        <div
+          className="lp-enter mt-10 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center"
+          style={{ "--lp-i": 3 } as React.CSSProperties}
+        >
+          <Link
+            href="/sign-up"
+            className="lp-press lp-shadow-md group inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-[color:var(--lp-ink)] px-7 text-[0.95rem] font-medium text-[color:var(--lp-cream)] hover:bg-[#241d15]"
+          >
+            Start researching — free
+            <ArrowRight size={17} className="lp-arrow" />
+          </Link>
+          <Link
+            href="/sign-in"
+            className="lp-press inline-flex h-13 items-center justify-center gap-2 rounded-full bg-white/70 px-7 text-[0.95rem] font-medium text-[color:var(--lp-ink)] lp-shadow-sm hover:bg-white"
+          >
+            Sign in
+          </Link>
+          <Link
+            href={GITHUB_REPO}
+            target="_blank"
+            rel="noreferrer"
+            className="lp-press inline-flex h-13 items-center justify-center gap-2 rounded-full px-5 text-[0.95rem] font-medium text-[color:var(--lp-ink-faint)] hover:text-[color:var(--lp-ink)]"
+          >
+            <Github size={17} />
+            Source
+          </Link>
         </div>
 
-        {/* FEATURE HUB */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 w-full mb-40">
-           <FeatureSquare 
-             icon={<Globe className="text-yellow-400" />}
-             stat="GLOBAL"
-             title="Instant Search"
-             desc="Browse 10k+ tickers with sub-millisecond fuzzy search."
-           />
-           <FeatureSquare 
-             icon={<BarChart3 className="text-blue-400" />}
-             stat="ACCURATE"
-             title="Advanced Charts"
-             desc="Professional TradingView widgets for deep technical analysis."
-           />
-           <FeatureSquare 
-             icon={<ShieldCheck className="text-green-400" />}
-             stat="AUTHENTIC"
-             title="Secure Flow"
-             desc="Bank-grade authentication with session persistence."
-           />
-           <FeatureSquare 
-             icon={<Zap className="text-orange-400" />}
-             stat="POWERFUL"
-             title="AI Intelligence"
-             desc="Deep analysis reports generated by Gemini 1.5 Pro."
-           />
+        {/* Hero product shot */}
+        <Reveal className="mt-20" index={0}>
+          <figure className="lp-shot lp-shadow-lg relative overflow-hidden rounded-[26px] bg-white p-1.5">
+            <Image
+              src="/landing/dashboard-real-2.png"
+              alt="TradXpert dashboard showing Indian market movers, sector heatmap and AI commentary"
+              width={1024}
+              height={566}
+              priority
+              sizes="(max-width: 1152px) 100vw, 1088px"
+              className="h-auto w-full rounded-[20px]"
+            />
+            <figcaption className="lp-mono absolute bottom-5 left-5 rounded-full bg-[color:var(--lp-ink)]/85 px-3.5 py-1.5 text-[10px] tracking-[0.16em] text-[color:var(--lp-cream)] uppercase backdrop-blur-sm">
+              Market desk · live NSE session
+            </figcaption>
+          </figure>
+        </Reveal>
+
+        {/* Stat row */}
+        <div className="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl bg-[color:var(--lp-hairline)] sm:grid-cols-3">
+          {STATS.map((s, i) => (
+            <Reveal key={s.value} index={i}>
+              <div className="h-full bg-[color:var(--lp-cream)] px-6 py-7">
+                <div className="lp-serif text-3xl tracking-tight">{s.value}</div>
+                <div className="mt-1.5 text-sm text-[color:var(--lp-ink-faint)]">
+                  {s.label}
+                </div>
+              </div>
+            </Reveal>
+          ))}
         </div>
       </section>
 
-      {/* FOOTER SECTION */}
-      <footer className="relative z-10 py-20 w-full border-t border-white/5 bg-black/40 backdrop-blur-3xl overflow-hidden flex flex-col items-center">
-        <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 text-[18vw] font-black text-white/[0.03] leading-none pointer-events-none select-none uppercase tracking-[0.05em]">
-          TRADXPERT
+      {/* ================= DATA SOURCES ================= */}
+      <section className="relative z-10 overflow-hidden border-y border-[color:var(--lp-hairline)] bg-[color:var(--lp-cream-deep)] py-6">
+        <div className="flex w-max lp-marquee">
+          {[0, 1].map((dup) => (
+            <ul
+              key={dup}
+              aria-hidden={dup === 1}
+              className="lp-mono flex shrink-0 items-center gap-10 pr-10 text-[11px] tracking-[0.2em] text-[color:var(--lp-ink-faint)] uppercase"
+            >
+              {SOURCES.map((s) => (
+                <li key={s} className="flex items-center gap-10 whitespace-nowrap">
+                  {s}
+                  <span className="h-1 w-1 rounded-full bg-[color:var(--lp-amber-deep)]/50" />
+                </li>
+              ))}
+            </ul>
+          ))}
         </div>
+      </section>
 
-        <div className="flex flex-col items-center gap-10">
-          <Link 
-            href={GITHUB_REPO} 
-            target="_blank"
-            className="group relative flex items-center justify-center"
-          >
-            <div className="absolute inset-0 bg-yellow-400/10 blur-2xl group-hover:scale-150 transition-all duration-700" />
-            <div className="relative py-4 px-10 border border-white/10 rounded-2xl flex items-center gap-4 text-white hover:text-yellow-400 font-bold transition-all duration-500 overflow-hidden">
-              <Github size={24} />
-              DEV-FIRST PHILOSOPHY: EXPLORE SOURCE CODE
-              <ArrowRight size={18} />
+      {/* ================= FEATURE TRIO ================= */}
+      <section className="relative z-10 mx-auto w-full max-w-6xl px-6 py-28">
+        <Reveal>
+          <h2 className="lp-serif max-w-2xl text-[clamp(2rem,4.2vw,3.25rem)] leading-[1.05] tracking-[-0.02em] text-balance">
+            Three desks. One workspace.
+          </h2>
+          <p className="mt-5 max-w-lg text-[1.0625rem] leading-relaxed text-[color:var(--lp-ink-soft)]">
+            Everything a serious retail investor in India stitches together from
+            six tabs and a spreadsheet, in one place.
+          </p>
+        </Reveal>
+
+        <div className="mt-16 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {FEATURES.map((f, i) => (
+            <Reveal key={f.kicker} index={i}>
+              <article className="lp-card lp-shadow-md flex h-full flex-col overflow-hidden rounded-[24px] bg-white">
+                <div className="lp-shot overflow-hidden bg-[color:var(--lp-cream-deep)]">
+                  <Image
+                    src={f.image}
+                    alt={f.alt}
+                    width={1024}
+                    height={566}
+                    sizes="(max-width: 1024px) 100vw, 360px"
+                    className="h-auto w-full"
+                  />
+                </div>
+                <div className="flex flex-1 flex-col p-7">
+                  <div className="flex items-center gap-2.5">
+                    <f.icon
+                      size={16}
+                      className="text-[color:var(--lp-amber-deep)]"
+                      strokeWidth={2}
+                    />
+                    <span className="lp-mono text-[10px] tracking-[0.2em] text-[color:var(--lp-ink-faint)] uppercase">
+                      {f.kicker}
+                    </span>
+                  </div>
+                  <h3 className="lp-serif mt-4 text-[1.5rem] leading-[1.15] tracking-[-0.01em]">
+                    {f.title}
+                  </h3>
+                  <p className="mt-3.5 text-[0.9375rem] leading-[1.6] text-[color:var(--lp-ink-soft)]">
+                    {f.body}
+                  </p>
+                </div>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ================= CTA ================= */}
+      <section className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-28">
+        <Reveal>
+          <div className="lp-shadow-lg relative overflow-hidden rounded-[32px] bg-[color:var(--lp-ink)] px-8 py-20 text-center md:px-16">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -top-32 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-[color:var(--lp-amber)]/25 blur-[100px]"
+            />
+            <h2 className="lp-serif relative mx-auto max-w-2xl text-[clamp(2rem,4.6vw,3.5rem)] leading-[1.04] tracking-[-0.02em] text-balance text-[color:var(--lp-cream)]">
+              Markets open at 9:15.
+              <br />
+              <span className="text-[color:var(--lp-amber)] italic">
+                Walk in with an analyst.
+              </span>
+            </h2>
+            <p className="relative mx-auto mt-6 max-w-md text-[1.0625rem] leading-relaxed text-[color:var(--lp-cream)]/60">
+              Free to start. No broker account required until you want to trade
+              for real.
+            </p>
+            <div className="relative mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link
+                href="/sign-up"
+                className="lp-press group inline-flex h-13 items-center justify-center gap-2.5 rounded-full bg-[color:var(--lp-amber)] px-8 text-[0.95rem] font-semibold text-[color:var(--lp-ink)] hover:bg-[color:var(--lp-cream)]"
+              >
+                Create your account
+                <ArrowRight size={17} className="lp-arrow" />
+              </Link>
+              <Link
+                href="/sign-in"
+                className="lp-press inline-flex h-13 items-center justify-center rounded-full px-6 text-[0.95rem] font-medium text-[color:var(--lp-cream)]/70 hover:text-[color:var(--lp-cream)]"
+              >
+                I already have one
+              </Link>
             </div>
-          </Link>
-
-          <div className="flex gap-8 text-gray-500 text-xs font-mono uppercase tracking-[0.4em] opacity-40">
-             <span>v1.02.0</span>
-             <span>•</span>
-             <span>GITHUB REPO</span>
-             <span>•</span>
-             <span>OPEN SOURCE FINTECH</span>
           </div>
-        </div>
-      </footer>
-    </div>
-  );
-};
+        </Reveal>
+      </section>
 
-const FeatureSquare = ({ icon, stat, title, desc }: any) => {
-  return (
-    <div className="group relative p-1 pb-1 flex flex-col items-start text-left bg-white/5 border border-white/5 rounded-[24px] hover:border-yellow-400/30 transition-all duration-500 overflow-hidden">
-      <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/5 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="p-8 h-full flex flex-col">
-        <div className="flex items-center gap-3 mb-10">
-           <div className="p-3 bg-white/5 rounded-xl group-hover:bg-yellow-400/10 group-hover:scale-110 transition-all">
-             {icon}
-           </div>
-           <span className="text-[10px] font-black tracking-[0.3em] text-white/30 uppercase group-hover:text-yellow-400 transition-colors">
-             {stat}
-           </span>
+      {/* ================= FOOTER ================= */}
+      <footer className="relative z-10 border-t border-[color:var(--lp-hairline)] px-6 py-12">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-6 sm:flex-row">
+          <p className="lp-serif text-lg tracking-tight">
+            TradXpert
+            <span className="lp-mono ml-3 text-[10px] tracking-[0.2em] text-[color:var(--lp-ink-faint)] uppercase">
+              v1.02 · open source
+            </span>
+          </p>
+          <Link
+            href={GITHUB_REPO}
+            target="_blank"
+            rel="noreferrer"
+            className="lp-press inline-flex items-center gap-2 rounded-full bg-white/70 px-4 py-2 text-sm font-medium text-[color:var(--lp-ink-soft)] lp-shadow-sm hover:text-[color:var(--lp-ink)]"
+          >
+            <Github size={16} />
+            View the source
+            <ArrowUpRight size={14} className="lp-arrow" />
+          </Link>
         </div>
-        <h3 className="text-xl font-black text-white mb-2 uppercase tracking-wide group-hover:translate-x-1 transition-transform">
-          {title}
-        </h3>
-        <p className="text-gray-500 text-sm leading-relaxed font-medium mt-auto group-hover:text-gray-400 transition-colors">
-          {desc}
+        <p className="mx-auto mt-8 w-full max-w-6xl text-xs leading-relaxed text-[color:var(--lp-ink-faint)]">
+          TradXpert is a research and education tool. Nothing here is investment
+          advice. Markets carry risk; do your own diligence before you buy.
         </p>
-      </div>
+      </footer>
     </div>
   );
 };
