@@ -159,8 +159,13 @@ export default function PaperTradingClient() {
     load();
   }, [load]);
 
+  // The engine returns every symbol ever traded, including fully-closed ones
+  // (qty 0) so realized P&L survives — only open lots belong in this table.
   const positions = useMemo(
-    () => (Array.isArray(data?.portfolio?.positions) ? data!.portfolio!.positions! : []),
+    () =>
+      (Array.isArray(data?.portfolio?.positions) ? data!.portfolio!.positions! : []).filter(
+        (p) => (num(p.qty) ?? 0) > 0
+      ),
     [data]
   );
 

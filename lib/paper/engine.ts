@@ -200,7 +200,9 @@ export async function getLivePrice(symbol: string, userEmail?: string): Promise<
   }
 
   try {
-    const quote = await getFinnhubQuote(symbol);
+    // Pass userEmail through: the aggregator's Indian branch can still reach
+    // Kite from here even if the direct call above was a transient miss.
+    const quote = await getFinnhubQuote(symbol, userEmail);
     const price = (quote as any)?.current;
     if (typeof price === "number" && Number.isFinite(price) && price > 0) {
       return { price, source: "aggregator" };
