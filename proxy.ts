@@ -35,6 +35,15 @@ function isPublicPath(pathname: string) {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Signed-in visitors skip the landing page entirely — redirecting here (on
+  // the cookie, before rendering) lets the landing route render without any
+  // session lookup of its own.
+  if (pathname === "/" && getSessionCookie(request)) {
+    return withSecurityHeaders(
+      NextResponse.redirect(new URL("/dashboard", request.url)),
+    );
+  }
+
   if (isPublicPath(pathname)) {
     return withSecurityHeaders(NextResponse.next());
   }

@@ -5,17 +5,19 @@ import UserDropdown from "./UserDropdown";
 import { searchStocks } from "@/lib/actions/finnhub.actions";
 
 export async function Header({ user }: { user: User | null }) {
-  const initialStocks = await searchStocks();
+  // Guests never see the search command or nav items — skip the Finnhub
+  // fetch entirely so the landing page renders without a blocking API call.
+  const initialStocks = user ? await searchStocks() : [];
   return (
     <header className={user ? "header" : "header-pill"}>
       <div className="header-wrapper">
-        <Link href="/">
+        <Link href="/" className={user ? undefined : "logo-chip"}>
           <Image
             src="/logo.png"
             alt="TradXpert"
             width={800}
             height={1024}
-            className="h-8 w-auto cursor-pointer"
+            className={`w-auto cursor-pointer ${user ? "h-8" : "h-6"}`}
           />
         </Link>
 

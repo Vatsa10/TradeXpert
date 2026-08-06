@@ -26,11 +26,12 @@ const UserDropdown = ({
   const router = useRouter();
 
   if (!user) {
+    // Guests only ever see this inside the cream landing pill — ink-on-cream.
     return (
       <Link href="/sign-in">
         <Button
           variant="outline"
-          className="h-10 px-8 border-yellow-500/20 hover:border-yellow-500 bg-yellow-500/5 hover:bg-yellow-500 text-yellow-500 rounded-full transition-all duration-300 shadow-lg shadow-yellow-500/5 hover:shadow-yellow-500/20"
+          className="h-9 rounded-full border-[rgba(23,19,14,0.12)] bg-white/70 px-6 text-[#17130e] transition-all duration-200 hover:bg-[#17130e] hover:text-[#faf7f2] active:scale-[0.97]"
         >
           Sign In
         </Button>
