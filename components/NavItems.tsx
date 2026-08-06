@@ -3,8 +3,15 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 
-import { NAV_ITEMS } from "@/lib/constants";
+import { NAV_ITEMS, TOOLS_ITEMS } from "@/lib/constants";
 import SearchCommand from "./SearchCommand";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 
 const NavItems = ({
   initialStocks,
@@ -37,6 +44,36 @@ const NavItems = ({
                 label="Search"
                 initialStocks={initialStocks}
               />
+            </li>
+          );
+
+        if (href === "/tools")
+          return (
+            <li key={href}>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className={`flex items-center gap-1 outline-none hover:text-yellow-500 transition-colors ${
+                    isActive(href) ? "text-gray-100" : ""
+                  }`}
+                >
+                  {label}
+                  <ChevronDown className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="text-gray-400 bg-zinc-900 border-zinc-800"
+                >
+                  {TOOLS_ITEMS.map((tool) => (
+                    <DropdownMenuItem
+                      key={tool.href}
+                      asChild
+                      className="cursor-pointer focus:bg-zinc-800 focus:text-yellow-500"
+                    >
+                      <Link href={tool.href}>{tool.label}</Link>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </li>
           );
 

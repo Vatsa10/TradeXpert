@@ -4,6 +4,32 @@ export const NAV_ITEMS = [
   { href: "/watchlist", label: "Watchlist" },
   { href: "/analysis", label: "Analysis" },
   { href: "/chat", label: "AI Chat" },
+  { href: "/paper", label: "Paper Trade" },
+  { href: "/tools", label: "Tools" },
+];
+
+// Sub-links rendered in the "Tools" nav dropdown and on the /tools index page
+export const TOOLS_ITEMS = [
+  {
+    href: "/tools/portfolio",
+    label: "Portfolio",
+    description: "Optimize allocations (HRP, inverse-vol, mean-variance) and run Monte Carlo risk simulations.",
+  },
+  {
+    href: "/tools/valuation",
+    label: "Valuation",
+    description: "Two-stage DCF with WACC, sensitivity tables, fundamentals-driven inputs and position sizing.",
+  },
+  {
+    href: "/tools/market",
+    label: "Market",
+    description: "Live market movers — most actives, top gainers and top losers.",
+  },
+  {
+    href: "/tools/mutual-funds",
+    label: "Mutual Funds",
+    description: "Search Indian mutual fund schemes and project SIP outcomes.",
+  },
 ];
 
 
