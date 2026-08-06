@@ -48,33 +48,45 @@ export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> 
 
   const cacheKey = getCacheKey("av_daily_series", { symbol });
 
-  return getOrFetch(
-    cacheKey,
-    async () => {
-      const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${ALPHA_VANTAGE_API_KEY}`;
-      const res = await withTimeout(fetch(url), TIMEOUT_MS);
-      if (!res) return null;
+  // NOTE: the fetcher throws (rather than returning null) on failure so that
+  // getOrFetch does not cache a null for the full alphaVantage TTL (3h) after
+  // a single transient timeout or rate-limit response.
+  try {
+    return await getOrFetch(
+      cacheKey,
+      async () => {
+        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${ALPHA_VANTAGE_API_KEY}`;
+        const res = await withTimeout(fetch(url), TIMEOUT_MS);
+        if (!res) throw new Error("Alpha Vantage daily series request timed out");
 
-      const data = await res.json();
-      const series = data?.["Time Series (Daily)"];
-      if (!series) return null;
+        const data = await res.json();
+        const series = data?.["Time Series (Daily)"];
+        if (!series) throw new Error("Alpha Vantage daily series unavailable");
 
-      const rows: OHLCV[] = Object.keys(series)
-        .sort()
-        .map((date) => ({
-          date,
-          open: parseFloat(series[date]["1. open"]),
-          high: parseFloat(series[date]["2. high"]),
-          low: parseFloat(series[date]["3. low"]),
-          close: parseFloat(series[date]["4. close"]),
-          volume: parseFloat(series[date]["5. volume"]),
-        }));
+        const rows: OHLCV[] = Object.keys(series)
+          .sort()
+          .map((date) => ({
+            date,
+            open: parseFloat(series[date]["1. open"]),
+            high: parseFloat(series[date]["2. high"]),
+            low: parseFloat(series[date]["3. low"]),
+            close: parseFloat(series[date]["4. close"]),
+            volume: parseFloat(series[date]["5. volume"]),
+          }))
+          // Drop malformed rows so a single NaN close cannot poison every
+          // downstream indicator (EMA/RSI propagate NaN forever).
+          .filter((r) => Number.isFinite(r.close) && Number.isFinite(r.high) && Number.isFinite(r.low));
 
-      return rows;
-    },
-    getTTL("alphaVantage"),
-    true
-  );
+        if (rows.length === 0) throw new Error("Alpha Vantage daily series empty");
+
+        return rows;
+      },
+      getTTL("alphaVantage"),
+      true
+    );
+  } catch {
+    return null;
+  }
 }
 
 function sma(values: number[], period: number): (number | null)[] {
@@ -171,21 +183,40 @@ function bollingerBands(closes: number[], period = 20, stdDevMult = 2) {
   return { mid, upper, lower };
 }
 
+// Wilder-smoothed ATR (the standard definition): seed with the SMA of the
+// first `period` true ranges, then ATR_i = (ATR_{i-1} * (period - 1) + TR_i) / period.
+// A plain rolling SMA of TR is NOT ATR and reacts far too quickly.
 function atr(rows: OHLCV[], period = 14): (number | null)[] {
+  const out: (number | null)[] = new Array(rows.length).fill(null);
+  if (rows.length < period + 1) return out;
+
   const trueRanges: number[] = rows.map((row, i) => {
     if (i === 0) return row.high - row.low;
     const prevClose = rows[i - 1].close;
     return Math.max(row.high - row.low, Math.abs(row.high - prevClose), Math.abs(row.low - prevClose));
   });
-  return sma(trueRanges, period);
+
+  // Index 0's TR is not a true "true range" (no previous close), so seed from index 1.
+  let running = trueRanges.slice(1, period + 1).reduce((a, b) => a + b, 0) / period;
+  out[period] = running;
+
+  for (let i = period + 1; i < trueRanges.length; i++) {
+    running = (running * (period - 1) + trueRanges[i]) / period;
+    out[i] = running;
+  }
+  return out;
 }
 
-const last = <T>(arr: T[]): T => arr[arr.length - 1];
-const lastN = <T>(arr: T[], n: number): T => arr[arr.length - 1 - n];
+const last = <T>(arr: (T | null | undefined)[]): T | null =>
+  arr.length === 0 ? null : arr[arr.length - 1] ?? null;
+const lastN = <T>(arr: (T | null | undefined)[], n: number): T | null =>
+  arr.length <= n ? null : arr[arr.length - 1 - n] ?? null;
 
 export function computeIndicatorsFromSeries(rows: OHLCV[]): TechnicalIndicators {
-  const closes = rows.map((r) => r.close);
   const indicators: TechnicalIndicators = {};
+  if (rows.length === 0) return indicators;
+
+  const closes = rows.map((r) => r.close);
 
   const rsiSeries = rsi(closes);
   const rsiVal = last(rsiSeries);
@@ -250,11 +281,23 @@ export function computeIndicatorsFromSeries(rows: OHLCV[]): TechnicalIndicators 
     };
   }
 
+  // ema50 is part of the exported TechnicalIndicators shape but was never
+  // populated, so consumers always saw it as undefined.
+  const ema50Val = last(ema(closes, 50));
+  if (ema50Val !== null) {
+    indicators.ema50 = {
+      name: "EMA (50)",
+      value: ema50Val,
+      signal: closes[closes.length - 1] > ema50Val ? "bullish" : "bearish",
+      description: "50-day exponential moving average",
+    };
+  }
+
   const bands = bollingerBands(closes);
   const upperVal = last(bands.upper);
   const lowerVal = last(bands.lower);
   if (upperVal !== null && lowerVal !== null) {
-    const currentClose = last(closes);
+    const currentClose = closes[closes.length - 1];
     const percentB = (currentClose - lowerVal) / (upperVal - lowerVal || 1);
     indicators.bollinger = {
       name: "Bollinger Bands",
@@ -284,5 +327,8 @@ export function computeIndicatorsFromSeries(rows: OHLCV[]): TechnicalIndicators 
 export async function getLocalTechnicalIndicators(symbol: string): Promise<TechnicalIndicators | null> {
   const rows = await fetchDailySeries(symbol);
   if (!rows || rows.length < 20) return null;
-  return computeIndicatorsFromSeries(rows);
+  const indicators = computeIndicatorsFromSeries(rows);
+  // An empty object is truthy — returning it would suppress the caller's
+  // Alpha Vantage indicator-endpoint fallback for zero benefit.
+  return Object.keys(indicators).length > 0 ? indicators : null;
 }

@@ -25,10 +25,13 @@ export interface WACCResult {
 }
 
 export function computeWACC(input: WACCInput): WACCResult {
-  const clampedBeta = Math.min(3, Math.max(0.2, input.beta));
+  // Math.min/Math.max propagate NaN, so an unparsed beta would clamp to NaN
+  // and make the whole WACC (and every DCF built on it) NaN.
+  const beta = Number.isFinite(input.beta) ? input.beta : 1;
+  const clampedBeta = Math.min(3, Math.max(0.2, beta));
   const costOfEquity = input.riskFreeRate + clampedBeta * input.equityRiskPremium;
 
-  if (input.debtToEquity <= 0) {
+  if (!Number.isFinite(input.debtToEquity) || input.debtToEquity <= 0) {
     return { costOfEquity, costOfDebtAfterTax: 0, wacc: costOfEquity, usedDebtCost: false };
   }
 
@@ -70,6 +73,22 @@ export interface DCFResult {
 export function computeDCF(input: DCFInput): DCFResult | null {
   const waccFraction = input.wacc / 100;
   const terminalGrowthFraction = input.terminalGrowthRate / 100;
+
+  // Non-finite inputs would propagate NaN silently all the way to
+  // fairValuePerShare, which reads as a real (but meaningless) number downstream.
+  if (
+    !Number.isFinite(waccFraction) ||
+    !Number.isFinite(terminalGrowthFraction) ||
+    !Number.isFinite(input.currentFCF) ||
+    !Number.isFinite(input.growthRateStage1) ||
+    !Number.isFinite(input.growthRateStage2) ||
+    !Number.isFinite(input.netDebt)
+  ) {
+    return null;
+  }
+
+  // A non-positive discount rate makes the present-value sum divergent.
+  if (waccFraction <= 0) return null;
 
   if (terminalGrowthFraction >= waccFraction) {
     return null; // Gordon growth model is undefined/negative when g >= r
@@ -143,27 +162,43 @@ export function reverseDCF(
   const impliedValue = (growthRateStage1: number) =>
     computeDCF({ ...input, growthRateStage1 })?.fairValuePerShare ?? null;
 
+  if (!Number.isFinite(currentPricePerShare) || currentPricePerShare <= 0) return null;
+  if (!(bounds.min < bounds.max)) return null;
+
   let lo = bounds.min;
   let hi = bounds.max;
   let loVal = impliedValue(lo);
-  let hiVal = impliedValue(hi);
+  const hiVal = impliedValue(hi);
 
   if (loVal === null || hiVal === null) return null;
-  if ((loVal - currentPricePerShare) * (hiVal - currentPricePerShare) > 0) return null; // no root in range
 
-  for (let i = 0; i < 50; i++) {
+  let loDiff = loVal - currentPricePerShare;
+  const hiDiff = hiVal - currentPricePerShare;
+
+  // Either endpoint may already BE the root; the strict `> 0` bracket test
+  // rejected that case as "no root in range" instead of returning it.
+  if (loDiff === 0) return lo;
+  if (hiDiff === 0) return hi;
+  if (loDiff * hiDiff > 0) return null; // genuinely no sign change in range
+
+  // Tolerance is relative to the price so this converges equally well for a
+  // Rs 20 penny stock and a Rs 60,000 share, where an absolute 0.01 either
+  // terminated far too early or never at all.
+  const tolerance = Math.max(1e-6, Math.abs(currentPricePerShare) * 1e-4);
+
+  for (let i = 0; i < 100; i++) {
     const mid = (lo + hi) / 2;
     const midVal = impliedValue(mid);
     if (midVal === null) return null;
 
-    if (Math.abs(midVal - currentPricePerShare) < 0.01) return mid;
+    const midDiff = midVal - currentPricePerShare;
+    if (Math.abs(midDiff) < tolerance) return mid;
 
-    if ((midVal - currentPricePerShare) * (loVal - currentPricePerShare) < 0) {
+    if (midDiff * loDiff < 0) {
       hi = mid;
-      hiVal = midVal;
     } else {
       lo = mid;
-      loVal = midVal;
+      loDiff = midDiff;
     }
   }
 

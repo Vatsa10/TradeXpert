@@ -19,10 +19,14 @@ function stdDev(values: number[], m: number): number {
 }
 
 // symbols x prices (aligned by index, same length). Returns log/simple returns.
-function toReturns(prices: number[]): number[] {
+export function toReturns(prices: number[]): number[] {
   const out: number[] = [];
   for (let i = 1; i < prices.length; i++) {
-    out.push((prices[i] - prices[i - 1]) / prices[i - 1]);
+    const prev = prices[i - 1];
+    // A zero or non-finite previous close would produce Infinity/NaN and
+    // silently poison the whole correlation + covariance matrix.
+    if (!Number.isFinite(prev) || prev === 0 || !Number.isFinite(prices[i])) continue;
+    out.push((prices[i] - prev) / prev);
   }
   return out;
 }
@@ -111,12 +115,7 @@ function singleLinkageClustering(dist: number[][]): ClusterNode {
     };
 
     // Single linkage: new distance to remaining clusters = min of the two merged.
-    const newDistances: number[][] = [];
     const remaining = clusters.filter((_, idx) => idx !== a && idx !== b);
-    for (let i = 0; i < remaining.length; i++) {
-      newDistances.push(new Array(remaining.length + 1).fill(0));
-    }
-
     const remainingIdx = clusters.map((_, idx) => idx).filter((idx) => idx !== a && idx !== b);
     const rows: number[] = [];
     for (const idx of remainingIdx) {
@@ -183,7 +182,14 @@ function recursiveBisection(cov: number[][], sortedIndices: number[]): number[] 
 
       const varLeft = clusterVariance(cov, left);
       const varRight = clusterVariance(cov, right);
-      const alpha = varLeft + varRight === 0 ? 0.5 : 1 - varLeft / (varLeft + varRight);
+      const totalVar = varLeft + varRight;
+      // Clamp: floating-point error on a near-singular covariance can push a
+      // quadratic form slightly negative, which would otherwise yield an
+      // alpha outside [0,1] and hence negative (short) portfolio weights.
+      const alpha =
+        !Number.isFinite(totalVar) || totalVar <= 0
+          ? 0.5
+          : Math.min(1, Math.max(0, 1 - varLeft / totalVar));
 
       for (const i of left) weights[i] *= alpha;
       for (const i of right) weights[i] *= 1 - alpha;
@@ -223,4 +229,137 @@ export function computeHRPWeights(symbolPrices: Record<string, number[]>): HRPRe
   });
 
   return { weights, correlationMatrix: corr, symbols };
+}
+
+// --------------------------------------------------------------------------
+// Alternative optimizers, ported from
+// intraday-stock-targets/trading_engine.py:299-382 (optimize_portfolio).
+//
+// Note on naming: the source labels its inverse-volatility branch "HRP"/
+// "Risk_Parity". Inverse volatility is *not* HRP (no clustering, no recursive
+// bisection), so it is exposed here under its real name; genuine HRP lives in
+// computeHRPWeights above.
+// --------------------------------------------------------------------------
+
+export const TRADING_DAYS_PER_YEAR = 252;
+
+export interface AlignedReturns {
+  symbols: string[];
+  // returns[i] is the return series for symbols[i]; all arrays share a length.
+  returns: number[][];
+}
+
+// Converts aligned close prices into equal-length return series.
+export function alignReturns(symbolPrices: Record<string, number[]>): AlignedReturns | null {
+  const symbols = Object.keys(symbolPrices);
+  if (symbols.length < 2) return null;
+
+  const series = symbols.map((s) => toReturns(symbolPrices[s]));
+  const minLen = Math.min(...series.map((r) => r.length));
+  if (minLen < 5) return null;
+
+  return { symbols, returns: series.map((r) => r.slice(r.length - minLen)) };
+}
+
+function toWeightMap(symbols: string[], raw: number[]): Record<string, number> {
+  const total = raw.reduce((a, b) => a + b, 0);
+  const normalized =
+    !Number.isFinite(total) || total <= 0 ? raw.map(() => 1 / raw.length) : raw.map((w) => w / total);
+  const weights: Record<string, number> = {};
+  symbols.forEach((s, i) => {
+    weights[s] = normalized[i];
+  });
+  return weights;
+}
+
+// Inverse-volatility weighting: w_i proportional to 1 / stdev_i.
+export function computeInverseVolWeights(symbolPrices: Record<string, number[]>): HRPResult | null {
+  const aligned = alignReturns(symbolPrices);
+  if (!aligned) return null;
+
+  const { symbols, returns } = aligned;
+  // 1e-8 floor mirrors the source and keeps a zero-variance asset finite.
+  const invVols = returns.map((r) => 1 / (stdDev(r, mean(r)) + 1e-8));
+
+  return {
+    weights: toWeightMap(symbols, invVols),
+    correlationMatrix: correlationMatrix(returns),
+    symbols,
+  };
+}
+
+// Gauss-Jordan inversion with partial pivoting. Returns null when the matrix is
+// numerically singular; sized for the <=10 asset case this API caps at.
+export function invertMatrix(matrix: number[][]): number[][] | null {
+  const n = matrix.length;
+  const a = matrix.map((row) => [...row]);
+  const inv: number[][] = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))
+  );
+
+  for (let col = 0; col < n; col++) {
+    let pivotRow = col;
+    for (let r = col + 1; r < n; r++) {
+      if (Math.abs(a[r][col]) > Math.abs(a[pivotRow][col])) pivotRow = r;
+    }
+    const pivot = a[pivotRow][col];
+    if (!Number.isFinite(pivot) || Math.abs(pivot) < 1e-12) return null;
+
+    if (pivotRow !== col) {
+      [a[col], a[pivotRow]] = [a[pivotRow], a[col]];
+      [inv[col], inv[pivotRow]] = [inv[pivotRow], inv[col]];
+    }
+
+    for (let j = 0; j < n; j++) {
+      a[col][j] /= pivot;
+      inv[col][j] /= pivot;
+    }
+
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue;
+      const factor = a[r][col];
+      if (factor === 0) continue;
+      for (let j = 0; j < n; j++) {
+        a[r][j] -= factor * a[col][j];
+        inv[r][j] -= factor * inv[col][j];
+      }
+    }
+  }
+
+  return inv;
+}
+
+// Closed-form mean-variance: w proportional to inv(cov) @ mean, clipped
+// long-only and renormalised. Stands in for numpy's pinv by falling back to a
+// ridge-regularised inverse when the covariance matrix is singular.
+export function computeMeanVarianceWeights(
+  symbolPrices: Record<string, number[]>
+): HRPResult | null {
+  const aligned = alignReturns(symbolPrices);
+  if (!aligned) return null;
+
+  const { symbols, returns } = aligned;
+  const n = symbols.length;
+  const annMeans = returns.map((r) => mean(r) * TRADING_DAYS_PER_YEAR);
+  const cov = covarianceMatrix(returns).map((row) => row.map((v) => v * TRADING_DAYS_PER_YEAR));
+
+  let inv = invertMatrix(cov);
+  if (!inv) {
+    // Ridge fallback: nudging the diagonal makes a singular covariance
+    // invertible while leaving a well-conditioned one essentially unchanged.
+    const scale = cov.reduce((s, row, i) => s + Math.abs(row[i]), 0) / n || 1;
+    const ridge = cov.map((row, i) => row.map((v, j) => (i === j ? v + 1e-6 * scale : v)));
+    inv = invertMatrix(ridge);
+  }
+  if (!inv) return null;
+
+  const raw = inv.map((row) => row.reduce((sum, v, j) => sum + v * annMeans[j], 0));
+  // Long-only: clip shorts to zero, then renormalise (equal weight if all <= 0).
+  const clipped = raw.map((w) => (Number.isFinite(w) ? Math.max(0, w) : 0));
+
+  return {
+    weights: toWeightMap(symbols, clipped),
+    correlationMatrix: correlationMatrix(returns),
+    symbols,
+  };
 }

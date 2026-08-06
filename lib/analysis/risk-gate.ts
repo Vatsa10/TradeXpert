@@ -42,6 +42,10 @@ function daysUntil(date: Date | null | undefined): number | null {
 
 export function computeRiskGate(input: RiskGateInput): RiskGateResult {
   const constraints: string[] = [];
+  // Negative / non-finite capital or cash must not flow through into a
+  // negative allocation (and hence a negative maxShares).
+  const accountCapital = Number.isFinite(input.accountCapital) ? Math.max(0, input.accountCapital) : 0;
+  const cashAvailable = Number.isFinite(input.cashAvailable) ? Math.max(0, input.cashAvailable) : 0;
   let allocationPct = BASE_POSITION_LIMIT_PCT;
   constraints.push(`Base position limit: ${(BASE_POSITION_LIMIT_PCT * 100).toFixed(0)}% of capital`);
 
@@ -56,16 +60,24 @@ export function computeRiskGate(input: RiskGateInput): RiskGateResult {
     constraints.push(`Elevated volatility (VIX ${input.vix.toFixed(1)} >= ${HIGH_VIX_THRESHOLD}): allocation halved`);
   }
 
-  let maxAllocationAmount = input.accountCapital * allocationPct;
+  let maxAllocationAmount = accountCapital * allocationPct;
   let cashConstrained = false;
 
-  if (maxAllocationAmount > input.cashAvailable) {
-    maxAllocationAmount = input.cashAvailable;
+  if (maxAllocationAmount > cashAvailable) {
+    maxAllocationAmount = cashAvailable;
     cashConstrained = true;
-    constraints.push(`Capped by available cash: ${input.cashAvailable.toFixed(2)}`);
+    constraints.push(`Capped by available cash: ${cashAvailable.toFixed(2)}`);
+    // The cash cap must be reflected in the percentage too. Consumers
+    // (lib/analysis/position-sizer.ts uses maxAllocationPct as the sizer's
+    // hard ceiling) would otherwise size against the uncapped 10% and blow
+    // straight through the cash constraint.
+    allocationPct = accountCapital > 0 ? maxAllocationAmount / accountCapital : 0;
   }
 
-  const maxShares = input.currentPrice > 0 ? Math.floor(maxAllocationAmount / input.currentPrice) : 0;
+  const maxShares =
+    input.currentPrice > 0 && Number.isFinite(input.currentPrice)
+      ? Math.floor(maxAllocationAmount / input.currentPrice)
+      : 0;
 
   return {
     maxAllocationPct: allocationPct,

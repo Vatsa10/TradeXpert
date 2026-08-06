@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { compactForLLM, compactText } from "./compact-context";
 
-const model = "gemini-3.1-flash-lite-preview"; // Using 1.5 Pro for thorough analysis
+const model = "gemini-3.1-flash-lite-preview";
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
 const llm = new ChatGoogleGenerativeAI({
@@ -16,6 +16,10 @@ const llm = new ChatGoogleGenerativeAI({
   apiKey: apiKey,
   maxOutputTokens: 4096,
 }) as any;
+
+// Character budgets for the agent payloads (roughly 4 chars/token).
+const QUANT_CONTEXT_MAX_CHARS = 24000;
+const NEWS_CONTEXT_MAX_CHARS = 12000;
 
 /**
  * Creates an agent that analyzes stock price data.
@@ -45,7 +49,10 @@ export async function runQuantitativeAnalyst(stockData: string) {
   const structuredLlm = llm.withStructuredOutput(QuantitativeAnalysisSchema);
   const chain = prompt.pipe(structuredLlm);
 
-  return chain.invoke({ stock_data: compactText(stockData) });
+  // The rich stock context is this agent's ENTIRE payload, so it gets a much
+  // larger budget than compactText's incidental-field default (2500 chars),
+  // which was silently discarding almost all of the Finnhub context.
+  return chain.invoke({ stock_data: compactText(String(stockData ?? ""), QUANT_CONTEXT_MAX_CHARS) });
 }
 
 /**
@@ -76,7 +83,10 @@ export async function runQualitativeAnalyst(newsData: string) {
   const structuredLlm = llm.withStructuredOutput(QualitativeAnalysisSchema);
   const chain = prompt.pipe(structuredLlm);
 
-  const compactNews = typeof newsData === "string" ? compactText(newsData) : JSON.stringify(compactForLLM(newsData));
+  const compactNews =
+    typeof newsData === "string"
+      ? compactText(newsData, NEWS_CONTEXT_MAX_CHARS)
+      : compactText(JSON.stringify(compactForLLM(newsData)), NEWS_CONTEXT_MAX_CHARS);
   return chain.invoke({ news_data: compactNews });
 }
 
@@ -112,6 +122,8 @@ export async function runReportWriter(
     - Sentiment: {overall_sentiment}
     - Perception: {market_perception}
     - Headlines: {news_summary}
+    - Key risks: {key_risks}
+    - Key opportunities: {key_opportunities}
 
     Ensure the final executive summary is high-impact and the rationale explains precisely WHY the recommendation was given based on the TradingView-grade financials and sentiment.`],
   ]);
@@ -119,12 +131,26 @@ export async function runReportWriter(
   const structuredLlm = llm.withStructuredOutput(InvestmentReportSchema);
   const chain = prompt.pipe(structuredLlm);
 
+  // QuantitativeAnalysisSchema calls this field `key_metrics_summary`; reading
+  // `metrics_summary` interpolated the literal string "undefined" into the
+  // report writer's prompt, so the final report was built without any of the
+  // quantitative agent's metrics summary.
+  const quant = quantAnalysis ?? {};
+  const qual = qualAnalysis ?? {};
+
   return chain.invoke({
     company_name: companyName,
     symbol: symbol,
-    quant_thesis: `Valuation Metrics: ${quantAnalysis.metrics_summary}. Trend: ${quantAnalysis.trend_analysis}. Core Price: ${quantAnalysis.current_price}`,
-    overall_sentiment: qualAnalysis.overall_sentiment,
-    market_perception: qualAnalysis.market_perception,
-    news_summary: qualAnalysis.news_summary,
+    quant_thesis: `Valuation Metrics: ${quant.key_metrics_summary ?? "n/a"}. Trend: ${quant.trend_analysis ?? "n/a"}. Core Price: ${quant.current_price ?? "n/a"}`,
+    overall_sentiment: qual.overall_sentiment ?? "neutral",
+    market_perception: qual.market_perception ?? "n/a",
+    news_summary: qual.news_summary ?? "n/a",
+    // key_risks / key_opportunities were produced by the qualitative agent but
+    // never reached the report writer, which is asked to emit a risk_assessment.
+    key_risks: Array.isArray(qual.key_risks) && qual.key_risks.length ? qual.key_risks.join("; ") : "none identified",
+    key_opportunities:
+      Array.isArray(qual.key_opportunities) && qual.key_opportunities.length
+        ? qual.key_opportunities.join("; ")
+        : "none identified",
   });
 }

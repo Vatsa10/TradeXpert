@@ -11,6 +11,9 @@ export interface MonteCarloParams {
   riskPct: number; // fraction of capital risked per trade, e.g. 0.01
   tradeCount: number;
   numSimulations: number;
+  // Fraction of starting capital which, if breached at any point, counts the
+  // path as "ruined". Defaults to 0.5 (a 50% drawdown of starting equity).
+  ruinThreshold?: number;
 }
 
 export interface MonteCarloResult {
@@ -27,16 +30,24 @@ export interface MonteCarloResult {
     worst: number;
   };
   winProbability: number; // fraction of simulations ending above starting capital
-  ruinProbability: number; // fraction of simulations that hit <= 0 capital
+  // Fraction of simulations whose equity fell to or below
+  // startingCapital * ruinThreshold at any point during the path.
+  ruinProbability: number;
+  ruinThreshold: number; // echoed back so callers can label the number
   sampleEquityCurves: number[][]; // a handful of paths for charting
 }
 
 const MAX_SIMULATIONS = 5000;
+const DEFAULT_RUIN_THRESHOLD = 0.5;
 
-function runSinglePath(params: MonteCarloParams): { finalCapital: number; maxDrawdown: number; curve: number[] } {
+function runSinglePath(
+  params: MonteCarloParams,
+  ruinLevel: number
+): { finalCapital: number; maxDrawdown: number; curve: number[]; ruined: boolean } {
   let capital = params.startingCapital;
   let peak = capital;
   let maxDrawdown = 0;
+  let ruined = false;
   const curve: number[] = [capital];
 
   for (let i = 0; i < params.tradeCount; i++) {
@@ -51,28 +62,51 @@ function runSinglePath(params: MonteCarloParams): { finalCapital: number; maxDra
 
     curve.push(capital);
 
-    if (capital <= 0) break;
+    // Ruin must be checked against a threshold, not against exactly 0:
+    // risking a fixed FRACTION of remaining capital can never reach 0, so a
+    // `capital <= 0` test made ruinProbability identically zero for every
+    // possible input.
+    if (capital <= ruinLevel) {
+      ruined = true;
+      break;
+    }
   }
 
-  return { finalCapital: capital, maxDrawdown, curve };
+  return { finalCapital: capital, maxDrawdown, curve, ruined };
 }
 
+// Nearest-rank percentile on an ascending-sorted array.
 function percentile(sorted: number[], p: number): number {
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
+  if (sorted.length === 0) return 0;
+  const rank = Math.ceil((p / 100) * sorted.length);
+  const idx = Math.min(sorted.length - 1, Math.max(0, rank - 1));
   return sorted[idx];
 }
 
 export function runMonteCarlo(params: MonteCarloParams): MonteCarloResult {
-  const numSimulations = Math.min(params.numSimulations, MAX_SIMULATIONS);
+  // Guard the loop bound: a 0/NaN/negative numSimulations previously produced
+  // an empty result set and NaN everywhere (0/0) plus Math.max() = -Infinity.
+  const requested = Number.isFinite(params.numSimulations) ? Math.floor(params.numSimulations) : 0;
+  const numSimulations = Math.min(MAX_SIMULATIONS, Math.max(1, requested));
+
+  const ruinThreshold =
+    Number.isFinite(params.ruinThreshold as number) &&
+    (params.ruinThreshold as number) >= 0 &&
+    (params.ruinThreshold as number) < 1
+      ? (params.ruinThreshold as number)
+      : DEFAULT_RUIN_THRESHOLD;
+  const ruinLevel = params.startingCapital * ruinThreshold;
 
   const finals: number[] = [];
   const drawdowns: number[] = [];
   const sampleEquityCurves: number[][] = [];
+  let ruinCount = 0;
 
   for (let i = 0; i < numSimulations; i++) {
-    const { finalCapital, maxDrawdown, curve } = runSinglePath(params);
+    const { finalCapital, maxDrawdown, curve, ruined } = runSinglePath(params, ruinLevel);
     finals.push(finalCapital);
     drawdowns.push(maxDrawdown);
+    if (ruined) ruinCount++;
     if (sampleEquityCurves.length < 10) sampleEquityCurves.push(curve);
   }
 
@@ -81,7 +115,6 @@ export function runMonteCarlo(params: MonteCarloParams): MonteCarloResult {
   const median = percentile(sortedFinals, 50);
 
   const winCount = finals.filter((f) => f > params.startingCapital).length;
-  const ruinCount = finals.filter((f) => f <= 0).length;
 
   return {
     finalCapitalStats: {
@@ -98,6 +131,7 @@ export function runMonteCarlo(params: MonteCarloParams): MonteCarloResult {
     },
     winProbability: winCount / finals.length,
     ruinProbability: ruinCount / finals.length,
+    ruinThreshold,
     sampleEquityCurves,
   };
 }
