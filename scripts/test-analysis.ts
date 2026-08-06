@@ -15,6 +15,33 @@ import { computeIndicatorsFromSeries, type OHLCV } from "@/lib/analysis/technica
 import { computeDCF, reverseDCF } from "@/lib/analysis/dcf";
 import { runMonteCarlo } from "@/lib/analysis/monte-carlo";
 import { computeRiskGate } from "@/lib/analysis/risk-gate";
+import {
+  REGIME_CONFIDENCE_BOOST,
+  REGIME_CONFIDENCE_PENALTY,
+  applyRegimeConfidence,
+  classifyTrend,
+  detectRegime,
+  regimeSummaryLine,
+} from "@/lib/analysis/market-regime";
+import {
+  detectCandlestickPatterns,
+  engulfingValue,
+  isDoji,
+  isHammer,
+  isMorningStar,
+  isShootingStar,
+  patternBias,
+  type PatternHit,
+} from "@/lib/analysis/candlestick-patterns";
+import { combineRegimeAndPatterns, formatRegimePatternInsight } from "@/lib/analysis/regime-playbook";
+import {
+  SIGNAL_CLASS,
+  balancedClassWeights,
+  decodeSpreads,
+  encodeSpreads,
+  labelDistribution,
+  labelNextDayMoves,
+} from "@/lib/analysis/signal-labeling";
 import { parseLLMJson } from "@/lib/chat/schemas";
 import { extractAllSymbols, extractEntity } from "@/lib/chat/intent";
 import { packContextMessages, type ChatTurn } from "@/lib/chat/context-history";
@@ -53,6 +80,20 @@ import {
   sellCashProceeds,
   type TradeRecord,
 } from "@/lib/paper/engine";
+import {
+  extractBseScripCode,
+  formatDateDMY,
+  isLikelyIndianTicker,
+  isNSEProviderConfigured,
+  mapBseQuote,
+  mapNseHistorical,
+  mapNseIndices,
+  mapNseQuote,
+  mapNseSearchResults,
+  mapNseSymbolList,
+  normalizeHistoricalDate,
+  parseIndianSymbol,
+} from "@/lib/data/providers/nse-india";
 import { decryptToken, encryptToken, getTokenKey } from "@/lib/kite/crypto";
 import { describeKiteExpiry, isKiteSessionExpired, kiteSessionExpiryAt } from "@/lib/kite/expiry";
 
@@ -1036,6 +1077,577 @@ check("computeEquityCurve tracks cash and cost basis per trade timestamp", () =>
   assertClose(curve[1].investedAtCost, 0, 1e-9, "nothing remains deployed");
   assertClose(curve[1].equity, 10460, 1e-9, "banked profit = 1500 - 20 - 1020");
   assert(curve[1].equity > curve[0].equity, "a profitable round trip raises the curve");
+});
+
+// ------------------------------------------------------- NSE/BSE public provider
+
+check("parseIndianSymbol splits suffixes and defaults bare symbols to NSE", () => {
+  const bare = parseIndianSymbol(" reliance ");
+  assert(bare.symbol === "RELIANCE", "symbols are upper-cased and trimmed");
+  assert(bare.exchange === "NSE", "a bare symbol routes to NSE");
+  assert(bare.ticker === "RELIANCE.NS", "NSE tickers carry the .NS suffix");
+
+  const bse = parseIndianSymbol("500325.BO");
+  assert(bse.symbol === "500325" && bse.exchange === "BSE", ".BO routes to BSE");
+  assert(bse.ticker === "500325.BO", "BSE tickers carry the .BO suffix");
+
+  assert(parseIndianSymbol("TCS.NS").symbol === "TCS", ".NS suffix is stripped from the symbol");
+  assert(parseIndianSymbol("").symbol === "", "an empty input yields an empty symbol");
+});
+
+check("the public NSE provider needs no env var to be configured", () => {
+  assert(isNSEProviderConfigured(), "direct NSE endpoints are key-free, so always configured");
+  assert(isLikelyIndianTicker("SBIN"), "bare NSE-exclusive names route to India");
+  assert(isLikelyIndianTicker("ANY.BO"), "a .BO suffix always routes to India");
+  assert(!isLikelyIndianTicker("AAPL"), "US tickers must not route to India");
+});
+
+check("mapNseQuote merges quote-equity with the trade_info section", () => {
+  const quote = mapNseQuote(
+    {
+      info: { symbol: "RELIANCE", companyName: "Reliance Industries Limited" },
+      metadata: { lastUpdateTime: "06-Aug-2026 15:30:00", pdSymbolPe: "24.5" },
+      priceInfo: {
+        lastPrice: 1400,
+        change: 20,
+        pChange: 1.449,
+        previousClose: 1380,
+        open: 1385,
+        intraDayHighLow: { min: 1375, max: 1410 },
+        weekHighLow: { min: 1100, max: 1500 },
+      },
+      industryInfo: { macro: "Energy", industry: "Refineries" },
+    },
+    {
+      securityWiseDP: { quantityTraded: 111 },
+      marketDeptOrderBook: { tradeInfo: { totalTradedVolume: 9000, totalMarketCap: 10 } },
+    }
+  );
+
+  assert(quote !== null, "a well-formed payload maps to a quote");
+  assert(quote!.ticker === "RELIANCE.NS", "ticker is derived from info.symbol");
+  assert(quote!.dayHigh === 1410 && quote!.dayLow === 1375, "intraDayHighLow maps to day high/low");
+  assert(quote!.yearHigh === 1500 && quote!.yearLow === 1100, "weekHighLow is the 52w range");
+  assert(quote!.volume === 9000, "volume comes from trade_info, not the base quote");
+  assertClose(quote!.marketCap ?? 0, 1_000_000, 1e-9, "market cap in lakhs is scaled to rupees");
+  assertClose(quote!.peRatio ?? 0, 24.5, 1e-9, "string PE is parsed");
+  assert(quote!.sector === "Energy" && quote!.industry === "Refineries", "industry info maps");
+});
+
+check("mapNseQuote rejects payloads without a symbol or a numeric price", () => {
+  assert(mapNseQuote(null) === null, "a null payload is not a quote");
+  assert(
+    mapNseQuote({ info: {}, priceInfo: { lastPrice: 100 } }) === null,
+    "a payload without a symbol is unusable"
+  );
+  assert(
+    mapNseQuote({ info: { symbol: "TCS" }, priceInfo: { lastPrice: "n/a" } }) === null,
+    "a non-numeric price is not a quote"
+  );
+
+  // Volume is the only field the trade_info round trip supplies; losing it must
+  // not sink the quote.
+  const quote = mapNseQuote({
+    info: { symbol: "TCS" },
+    priceInfo: { lastPrice: 3000, previousClose: 2950, intraDayHighLow: {}, weekHighLow: {} },
+  });
+  assert(quote !== null && quote.volume === 0, "a missing trade_info leaves volume at 0");
+  assert(quote!.companyName === "TCS", "companyName falls back to the symbol");
+});
+
+check("mapBseQuote parses the string-typed getScripHeaderData header", () => {
+  const quote = mapBseQuote(
+    {
+      Header: {
+        ScripCode: "500325",
+        CompanyName: "RELIANCE INDUSTRIES LTD.",
+        PrevClose: "1,380.00",
+        Open: "1385.00",
+        High: "1410.50",
+        Low: "1375.25",
+        LTP: "1400.00",
+      },
+      Fifty2WkHigh_adj: "1500",
+      Fifty2WkLow_adj: "1100",
+    },
+    "RELIANCE"
+  );
+
+  assert(quote !== null, "a well-formed BSE payload maps to a quote");
+  assert(quote!.exchange === "BSE" && quote!.ticker === "500325.BO", "BSE quotes carry .BO");
+  assertClose(quote!.previousClose, 1380, 1e-9, "comma-separated numbers are parsed");
+  assertClose(quote!.change, 20, 1e-9, "change is derived from LTP - PrevClose");
+  assertClose(quote!.percentChange, (20 / 1380) * 100, 1e-9, "percent change is derived too");
+  assert(quote!.yearHigh === 1500 && quote!.yearLow === 1100, "52w adj values map");
+  assert(mapBseQuote({ Header: { ScripCode: "500325" } }) === null, "no LTP means no quote");
+});
+
+check("mapNseSearchResults keeps symbol rows only", () => {
+  const results = mapNseSearchResults({
+    symbols: [
+      { symbol: "hdfcbank", symbol_info: "HDFC Bank Limited", result_type: "symbol" },
+      { symbol: "NIFTY 50", symbol_info: "Nifty 50", result_type: "index" },
+      { symbol: "", symbol_info: "junk", result_type: "symbol" },
+      { symbol: "ITC" },
+    ],
+  });
+
+  assert(results.length === 2, "index rows and symbol-less rows are dropped");
+  assert(results[0].symbol === "HDFCBANK", "symbols are upper-cased");
+  assert(results[0].companyName === "HDFC Bank Limited", "symbol_info is the company name");
+  assert(results[1].companyName === "ITC", "companyName falls back to the symbol");
+  assert(mapNseSearchResults({}).length === 0, "a payload without symbols yields nothing");
+});
+
+check("mapNseSymbolList ranks prefix matches ahead of substring matches", () => {
+  const master = ["SWARAJENG", "RELIANCE", "RELINFRA", "TCS", "RELIGARE"];
+
+  const results = mapNseSymbolList(master, "reli");
+  assert(results.length === 3, "only symbols containing the query survive");
+  assert(results[0].symbol === "RELIANCE", "shortest prefix match ranks first");
+  assert(
+    results.map((r) => r.symbol).join(",") === "RELIANCE,RELINFRA,RELIGARE",
+    "prefix matches sort by length, and nothing non-matching leaks in"
+  );
+  assert(results[0].companyName === "RELIANCE", "companyName mirrors the symbol (master has no names)");
+
+  const wrapped = mapNseSymbolList({ data: ["ITC", "ITCHOTELS"] }, "ITC");
+  assert(wrapped.length === 2, "a { data: [...] } envelope is accepted too");
+  assert(mapNseSymbolList(master, "").length === 0, "an empty query matches nothing, not everything");
+  assert(mapNseSymbolList(master, "TCS", 0).length === 0, "the limit is honoured");
+  assert(mapNseSymbolList(null, "TCS").length === 0, "a junk payload yields nothing");
+});
+
+check("mapNseHistorical prefers mTIMESTAMP over the IST-shifted CH_TIMESTAMP", () => {
+  // NSE sends the 31-Jul bar with CH_TIMESTAMP at IST midnight, whose UTC date
+  // is the 30th. Trusting it would shift every candle back one day.
+  const rows = mapNseHistorical({
+    data: [
+      {
+        CH_TIMESTAMP: "2026-07-30T18:30:00.000Z",
+        mTIMESTAMP: "31-Jul-2026",
+        CH_OPENING_PRICE: 2385,
+        CH_CLOSING_PRICE: 2365.6,
+      },
+    ],
+  });
+
+  assert(rows.length === 1, "the row maps");
+  assert(rows[0].date === "2026-07-31", "mTIMESTAMP wins over the ISO instant");
+});
+
+check("mapNseHistorical accepts the camelCase NextApi mirror spelling", () => {
+  const rows = mapNseHistorical([
+    {
+      mTIMESTAMP: "31-Jul-2026",
+      chOpeningPrice: 2385,
+      chTradeHighPrice: 2391,
+      chTradeLowPrice: 2326.1,
+      chClosingPrice: 2365.6,
+      chTotTradedQty: 4343683,
+    },
+  ]);
+
+  assert(rows.length === 1, "a bare array payload maps");
+  assertClose(rows[0].close, 2365.6, 1e-9, "chClosingPrice maps to close");
+  assertClose(rows[0].high, 2391, 1e-9, "chTradeHighPrice maps to high");
+  assertClose(rows[0].volume, 4343683, 1e-9, "chTotTradedQty maps to volume");
+});
+
+check("mapBseQuote reads the live Cmpname/CurrRate envelope", () => {
+  // The real getScripHeaderData payload keeps the scrip code and company name
+  // on Cmpname, not Header.
+  const quote = mapBseQuote({
+    CurrRate: { LTP: "1325.00" },
+    Cmpname: { FullN: "Reliance Industries Ltd", EquityScrips: "500325" },
+    Header: { PrevClose: "1281.00", Open: "1283.30", High: "1325.00", Low: "1282.00", LTP: "1325.00" },
+  });
+
+  assert(quote !== null, "the live envelope maps");
+  assert(quote!.symbol === "500325", "the scrip code falls back to Cmpname.EquityScrips");
+  assert(quote!.companyName === "Reliance Industries Ltd", "the name falls back to Cmpname.FullN");
+  assertClose(quote!.lastPrice, 1325, 1e-9, "LTP maps");
+  assertClose(quote!.change, 44, 1e-9, "change is derived from LTP - PrevClose");
+});
+
+check("mapNseHistorical yields ascending OHLCV rows across NSE column spellings", () => {
+  const rows = mapNseHistorical({
+    data: [
+      {
+        CH_TIMESTAMP: "2026-08-05",
+        CH_OPENING_PRICE: 1385,
+        CH_TRADE_HIGH_PRICE: 1410,
+        CH_TRADE_LOW_PRICE: 1375,
+        CH_CLOSING_PRICE: 1400,
+        CH_TOT_TRADED_QTY: 9000,
+      },
+      { mTIMESTAMP: "04-Aug-2026", open: 1370, high: 1390, low: 1360, close: 1385, volume: 8000 },
+      { CH_TIMESTAMP: "2026-08-03" },
+    ],
+  });
+
+  assert(rows.length === 2, "rows without a close are dropped");
+  assert(rows[0].date === "2026-08-04", "rows are sorted ascending by date");
+  assert(rows[1].date === "2026-08-05", "the newest row sorts last");
+  assertClose(rows[1].close, 1400, 1e-9, "CH_CLOSING_PRICE maps to close");
+  assertClose(rows[0].volume, 8000, 1e-9, "the lower-case column spelling also maps");
+
+  const typed: OHLCV[] = rows;
+  assert(typed.length === 2, "mapNseHistorical output should be OHLCV[]");
+  assert(mapNseHistorical({}).length === 0, "an empty payload yields no rows");
+});
+
+check("normalizeHistoricalDate normalises every NSE date spelling to YYYY-MM-DD", () => {
+  assert(normalizeHistoricalDate("2026-08-05T00:00:00.000Z") === "2026-08-05", "ISO is truncated");
+  assert(normalizeHistoricalDate("05-Aug-2026") === "2026-08-05", "DD-MMM-YYYY is converted");
+  assert(normalizeHistoricalDate("05-08-2026") === "2026-08-05", "DD-MM-YYYY is converted");
+  assert(normalizeHistoricalDate("05-XXX-2026") === null, "an unknown month is rejected");
+  assert(normalizeHistoricalDate("") === null, "an empty date is rejected");
+});
+
+check("formatDateDMY emits the DD-MM-YYYY NSE historical endpoints require", () => {
+  assert(formatDateDMY(new Date(Date.UTC(2026, 7, 5))) === "05-08-2026", "day and month are padded");
+  assert(formatDateDMY(new Date(Date.UTC(2026, 11, 31))) === "31-12-2026", "December is 12");
+});
+
+check("mapNseIndices maps the allIndices snapshot and drops priceless rows", () => {
+  const indices = mapNseIndices({
+    data: [
+      {
+        index: "NIFTY 50",
+        last: 24500,
+        variation: 120,
+        percentChange: 0.49,
+        open: 24400,
+        high: 24550,
+        low: 24380,
+        previousClose: 24380,
+        yearHigh: 26000,
+        yearLow: 21000,
+      },
+      { index: "NIFTY BANK", last: null },
+    ],
+  });
+
+  assert(indices.length === 1, "an index without a last price is dropped");
+  assert(indices[0].index === "NIFTY 50", "index name is preserved verbatim");
+  assertClose(indices[0].change, 120, 1e-9, "variation maps to change");
+  assert(indices[0].dayHigh === 24550 && indices[0].dayLow === 24380, "high/low map to day range");
+  assert(indices[0].yearHigh === 26000, "yearHigh is optional but preserved when present");
+});
+
+check("extractBseScripCode pulls the six-digit code from the HTML search fragment", () => {
+  const html =
+    "<li><span>ITC   INE154A01025<strong>500875</strong></span></li>" +
+    "<li><span>RELIANCE   INE002A01018<strong>500325</strong></span></li>";
+
+  assert(extractBseScripCode(html, "RELIANCE") === "500325", "the matching row's code is used");
+  assert(extractBseScripCode(html, "ITC") === "500875", "a different symbol picks its own row");
+  assert(extractBseScripCode(html, "UNKNOWN") === "500875", "no match falls back to the first code");
+  assert(extractBseScripCode("", "ITC") === null, "empty HTML yields no code");
+});
+
+// ------------------------------------------------- market regime (NSE-Neuron)
+
+function bar(close: number, i: number, over: Partial<OHLCV> = {}): OHLCV {
+  return {
+    date: `2024-01-${String((i % 28) + 1).padStart(2, "0")}`,
+    open: close,
+    high: close,
+    low: close,
+    close,
+    volume: 1000,
+    ...over,
+  };
+}
+
+/** 260 bars: `n` bars of `startPrice` then a linear ramp of `slope` per bar. */
+function rampSeries(startPrice: number, slope: number, n = 260): OHLCV[] {
+  return Array.from({ length: n }, (_, i) => bar(startPrice + slope * i, i));
+}
+
+check("detectRegime returns UNKNOWN below the 200-bar SMA window", () => {
+  const short = rampSeries(100, 1, 199);
+  const res = detectRegime(short);
+  assert(res.regime === "UNKNOWN", "199 bars cannot support an SMA200");
+  assert(res.sma200 === null, "no long average is reported");
+  assert(regimeSummaryLine(res).includes("UNKNOWN"), "summary line flags the unknown regime");
+});
+
+check("detectRegime tags a sustained uptrend BULL and a downtrend BEAR", () => {
+  const up = detectRegime(rampSeries(100, 1));
+  assert(up.regime === "BULL", `rising series is BULL, got ${up.regime}`);
+  assert(up.direction === "bullish", "BULL maps to a bullish direction");
+  assert(up.sma50 !== null && up.sma200 !== null && up.sma50 > up.sma200, "SMA50 leads SMA200 on the way up");
+  assert((up.distanceFromSma200 ?? 0) > 0, "price sits above the long average");
+
+  const down = detectRegime(rampSeries(400, -1));
+  assert(down.regime === "BEAR", `falling series is BEAR, got ${down.regime}`);
+  assert(down.direction === "bearish", "BEAR maps to a bearish direction");
+  assert(down.sma50 !== null && down.sma200 !== null && down.sma50 < down.sma200, "SMA50 trails SMA200 on the way down");
+});
+
+check("detectRegime tags a flat series SIDEWAYS", () => {
+  const flat = detectRegime(rampSeries(100, 0));
+  assert(flat.regime === "SIDEWAYS", `flat series is SIDEWAYS, got ${flat.regime}`);
+  assert(flat.direction === "neutral", "SIDEWAYS has no directional read");
+  assertClose(flat.distanceFromSma200 ?? 1, 0, 1e-9, "price equals the long average");
+});
+
+check("classifyTrend fixes the source's band-ordering bug (golden cross beats the 3% band)", () => {
+  // Close is only 2% above SMA200 — inside the +/-3% band — but the averages
+  // have crossed and price confirms above SMA50. regime_detector.py:47-54
+  // returned SIDEWAYS here; the port returns BULL.
+  assert(classifyTrend(102, 101, 100) === "BULL", "confirmed golden cross wins over the flat band");
+  assert(classifyTrend(98, 99, 100) === "BEAR", "confirmed death cross wins over the flat band");
+  // With no price confirmation, the band still applies.
+  assert(classifyTrend(100.5, 99, 100) === "SIDEWAYS", "unconfirmed cross inside the band stays SIDEWAYS");
+  // Outside the band with a conflicting cross, price decides.
+  assert(classifyTrend(110, 105, 100) === "BULL", "price 10% above SMA200 is BULL");
+  assert(classifyTrend(85, 90, 100) === "BEAR", "price 15% below SMA200 is BEAR");
+});
+
+check("applyRegimeConfidence boosts agreement, penalises conflict, and keeps the audit trail", () => {
+  const agree = applyRegimeConfidence("BUY", 60, "BULL");
+  assertClose(agree.confidence, 68, 1e-9, "+8 pts when BUY meets a BULL regime");
+  assertClose(agree.confidenceOrig, 60, 1e-9, "the original confidence is preserved");
+  assertClose(agree.confidenceDelta, REGIME_CONFIDENCE_BOOST, 1e-9, "delta equals the boost constant");
+  assert(agree.agreement === "agrees", "agreement is recorded");
+
+  const conflict = applyRegimeConfidence("BUY", 60, "BEAR");
+  assertClose(conflict.confidence, 54, 1e-9, "-6 pts when BUY meets a BEAR regime");
+  assertClose(conflict.confidenceDelta, -REGIME_CONFIDENCE_PENALTY, 1e-9, "delta equals the penalty constant");
+  assert(conflict.agreement === "conflicts", "conflict is recorded");
+
+  const sell = applyRegimeConfidence("SELL", 70, "BEAR");
+  assertClose(sell.confidence, 78, 1e-9, "SELL agrees with BEAR");
+
+  const hold = applyRegimeConfidence("HOLD", 55, "BULL");
+  assertClose(hold.confidence, 55, 1e-9, "HOLD is directionless, so nothing is applied");
+  assertClose(hold.confidenceDelta, 0, 1e-9, "zero delta on HOLD");
+
+  const unknown = applyRegimeConfidence("BUY", 55, "UNKNOWN");
+  assertClose(unknown.confidence, 55, 1e-9, "UNKNOWN regime never moves confidence");
+});
+
+check("applyRegimeConfidence clamps to 0-100 and reports the delta actually applied", () => {
+  const high = applyRegimeConfidence("BUY", 96, "BULL");
+  assertClose(high.confidence, 100, 1e-9, "confidence cannot exceed 100");
+  assertClose(high.confidenceDelta, 4, 1e-9, "reported delta is the clamped 4, not the nominal 8");
+
+  const low = applyRegimeConfidence("BUY", 3, "BEAR");
+  assertClose(low.confidence, 0, 1e-9, "confidence cannot go below 0");
+  assertClose(low.confidenceDelta, -3, 1e-9, "reported delta is the clamped -3");
+
+  const bad = applyRegimeConfidence("BUY", Number.NaN, "BULL");
+  assert(Number.isFinite(bad.confidence), "a non-finite input confidence does not poison the output");
+});
+
+// ------------------------------------------- candlestick patterns (NSE-Neuron)
+
+/** Ordinary candles with a real body, so the rolling body average is meaningful. */
+function bodyBar(close: number, i: number): OHLCV {
+  return { date: `2024-02-${String((i % 28) + 1).padStart(2, "0")}`, open: close + 1, high: close + 1.5, low: close - 1.5, close, volume: 1000 };
+}
+
+check("isHammer requires a long lower shadow, a small body, and a prior decline", () => {
+  const base: OHLCV[] = Array.from({ length: 8 }, (_, i) => bodyBar(120 - i * 2, i));
+  const hammer: OHLCV = { date: "2024-02-01", open: 100, high: 101, low: 90, close: 100.5, volume: 1000 };
+  const rows = [...base, hammer];
+  assert(isHammer(rows, rows.length - 1), "long lower shadow after a decline is a hammer");
+
+  // Same candle shape but arriving after an advance: not a hammer.
+  const rising: OHLCV[] = Array.from({ length: 8 }, (_, i) => bodyBar(80 + i * 3, i));
+  assert(!isHammer([...rising, hammer], 8), "no hammer without a preceding decline");
+
+  // Lower shadow too short relative to the body.
+  const fat: OHLCV = { date: "2024-02-01", open: 100, high: 101, low: 99.8, close: 100.5, volume: 1000 };
+  assert(!isHammer([...base, fat], 8), "a short lower shadow is not a hammer");
+});
+
+check("isShootingStar mirrors the hammer after an advance", () => {
+  const rising: OHLCV[] = Array.from({ length: 8 }, (_, i) => bodyBar(80 + i * 3, i));
+  const star: OHLCV = { date: "2024-02-01", open: 104, high: 115, low: 103.5, close: 104.5, volume: 1000 };
+  assert(isShootingStar([...rising, star], 8), "long upper shadow after an advance is a shooting star");
+
+  const falling: OHLCV[] = Array.from({ length: 8 }, (_, i) => bodyBar(120 - i * 3, i));
+  assert(!isShootingStar([...falling, star], 8), "no shooting star without a preceding advance");
+});
+
+check("isDoji fires only when open and close are near-equal within the range", () => {
+  const rows = [bar(100, 0), bar(100, 1), { date: "d", open: 100, high: 105, low: 95, close: 100.2, volume: 1 }];
+  assert(isDoji(rows, 2), "0.2 body over a 10 range is a doji");
+  const wideBody = [bar(100, 0), bar(100, 1), { date: "d", open: 100, high: 105, low: 95, close: 104, volume: 1 }];
+  assert(!isDoji(wideBody, 2), "a 4-point body over a 10 range is not a doji");
+  const zeroRange = [bar(100, 0), bar(100, 1), { date: "d", open: 100, high: 100, low: 100, close: 100, volume: 1 }];
+  assert(!isDoji(zeroRange, 2), "a zero-range bar is rejected rather than dividing by zero");
+});
+
+check("engulfingValue is signed +100 bullish / -100 bearish", () => {
+  const bullish: OHLCV[] = [
+    { date: "d1", open: 105, high: 106, low: 99, close: 100, volume: 1 },
+    { date: "d2", open: 99, high: 108, low: 98, close: 106, volume: 1 },
+  ];
+  assert(engulfingValue(bullish, 1) === 100, "down bar swallowed by an up bar is bullish engulfing");
+
+  const bearish: OHLCV[] = [
+    { date: "d1", open: 100, high: 106, low: 99, close: 105, volume: 1 },
+    { date: "d2", open: 106, high: 107, low: 98, close: 99, volume: 1 },
+  ];
+  assert(engulfingValue(bearish, 1) === -100, "up bar swallowed by a down bar is bearish engulfing");
+
+  const noEngulf: OHLCV[] = [
+    { date: "d1", open: 100, high: 110, low: 90, close: 108, volume: 1 },
+    { date: "d2", open: 104, high: 106, low: 103, close: 105, volume: 1 },
+  ];
+  assert(engulfingValue(noEngulf, 1) === 0, "an inside bar does not engulf");
+  assert(engulfingValue(bullish, 0) === 0, "the first bar has no predecessor");
+});
+
+check("isMorningStar needs long-down, small star, then a close above the first midpoint", () => {
+  const pre: OHLCV[] = Array.from({ length: 6 }, (_, i) => bar(100, i, { high: 103, low: 97, open: 101, close: 99 }));
+  const first: OHLCV = { date: "f", open: 110, high: 111, low: 99, close: 100, volume: 1 };
+  const star: OHLCV = { date: "s", open: 99, high: 99.5, low: 98, close: 98.8, volume: 1 };
+  const third: OHLCV = { date: "t", open: 99, high: 109, low: 98.5, close: 108, volume: 1 };
+  const rows = [...pre, first, star, third];
+  assert(isMorningStar(rows, rows.length - 1), "the three-bar bottoming reversal is detected");
+
+  // Third bar fails to recover past the midpoint of the first body (105).
+  const weakThird: OHLCV = { date: "t", open: 99, high: 103, low: 98.5, close: 102, volume: 1 };
+  assert(!isMorningStar([...pre, first, star, weakThird], 8), "a weak third bar is not a morning star");
+});
+
+check("detectCandlestickPatterns dedupes to the most recent hit and stays pure", () => {
+  const base: OHLCV[] = Array.from({ length: 12 }, (_, i) => bodyBar(120 - i * 2, i));
+  const hammerA: OHLCV = { date: "2024-03-01", open: 100, high: 101, low: 90, close: 100.5, volume: 1 };
+  const hammerB: OHLCV = { date: "2024-03-05", open: 96, high: 97, low: 86, close: 96.5, volume: 1 };
+  const rows = [...base, hammerA, bodyBar(97, 13), hammerB];
+  const snapshot = JSON.stringify(rows);
+
+  const hits = detectCandlestickPatterns(rows);
+  assert(JSON.stringify(rows) === snapshot, "the input series is never mutated");
+
+  const hammers = hits.filter((h) => h.pattern === "HAMMER");
+  assert(hammers.length === 1, "one hit per pattern after dedupe");
+  assert(hammers[0].date === "2024-03-05", "the most recent occurrence wins");
+  assert(hammers[0].value === 100 && hammers[0].bias === "bullish", "TA-Lib +100 convention for a bullish hammer");
+  assert(detectCandlestickPatterns([bar(100, 0), bar(101, 1)]).length === 0, "too-short series yields nothing");
+});
+
+check("patternBias excludes doji from the directional tally (source Pattern_Score bug)", () => {
+  const mk = (pattern: PatternHit["pattern"], bias: PatternHit["bias"], value: number): PatternHit => ({
+    pattern,
+    value,
+    bias,
+    index: 0,
+    date: "d",
+    description: "",
+  });
+
+  // The Python original summed DOJI's +100 into a directional score.
+  assertClose(patternBias([mk("DOJI", "neutral", 100)]).score, 0, 1e-9, "a lone doji is directionless");
+  assert(patternBias([mk("DOJI", "neutral", 100)]).bias === "neutral", "and reports neutral bias");
+
+  const mixed = patternBias([mk("HAMMER", "bullish", 100), mk("DOJI", "neutral", 100), mk("SHOOTING_STAR", "bearish", -100)]);
+  assertClose(mixed.score, 0, 1e-9, "one bullish and one bearish pattern net out");
+
+  const bull = patternBias([mk("HAMMER", "bullish", 100), mk("MORNING_STAR", "bullish", 100)]);
+  assertClose(bull.score, 200, 1e-9, "two bullish patterns add");
+  assert(bull.bias === "bullish", "net bullish");
+});
+
+// ------------------------------------------- regime x pattern playbook
+
+check("combineRegimeAndPatterns encodes the dead-cat-bounce rule", () => {
+  const hammer: PatternHit = {
+    pattern: "HAMMER",
+    value: 100,
+    bias: "bullish",
+    index: 5,
+    date: "2024-03-05",
+    description: "",
+  };
+
+  const bearBounce = combineRegimeAndPatterns("BEAR", [hammer]);
+  assert(bearBounce.conviction === "caution", "a bullish pattern inside a bear regime is not a buy");
+  assert(bearBounce.headline.toLowerCase().includes("dead-cat"), "the warning is stated explicitly");
+
+  const bullContinuation = combineRegimeAndPatterns("BULL", [hammer]);
+  assert(bullContinuation.conviction === "strong", "trend and pattern agreeing is the strong case");
+  assert(bullContinuation.patternBias === "bullish", "bias is carried through");
+
+  const range = combineRegimeAndPatterns("SIDEWAYS", []);
+  assert(range.conviction === "none", "no trend and no pattern means no edge");
+
+  const unknown = combineRegimeAndPatterns("UNKNOWN", [hammer]);
+  assert(unknown.conviction === "none", "an unknown regime cannot qualify a pattern");
+});
+
+check("formatRegimePatternInsight renders a grounded, quotable block", () => {
+  const insight = combineRegimeAndPatterns("BULL", []);
+  const text = formatRegimePatternInsight(insight);
+  assert(text.includes("Regime: BULL"), "the regime is named");
+  assert(text.includes("none in the last 10 sessions"), "an empty pattern set is stated, not omitted");
+  assert(text.split("\n").length === 4, "four fixed lines, deterministic for the LLM context");
+});
+
+// ------------------------------------------- signal labelling (NSE-Neuron)
+
+check("labelNextDayMoves applies the +/-0.5% next-day rule without look-ahead", () => {
+  //            i=0    i=1 (+1%)  i=2 (-1%)   i=3 (+0.2%)  i=4 (+0.8%)
+  const closes = [100, 101, 99.99, 100.19, 101.0];
+  const labelled = labelNextDayMoves(closes);
+  assert(labelled.length === closes.length - 1, "the final bar has no next day and is dropped");
+  assert(labelled[0].labelName === "BUY", "+1% next day is BUY");
+  assert(labelled[1].labelName === "SELL", "-1% next day is SELL");
+  assert(labelled[2].labelName === "HOLD", "+0.2% is inside the flat band");
+  assert(labelled[3].labelName === "BUY", "+0.8% clears the threshold");
+  assert(labelled[0].label === SIGNAL_CLASS.BUY && labelled[1].label === SIGNAL_CLASS.SELL, "class indices match the source (BUY=2, SELL=0)");
+  assertClose(labelled[0].nextReturn, 0.01, 1e-9, "the return itself is exact");
+});
+
+check("labelNextDayMoves treats exactly +/-0.5% as HOLD (strict inequality, as in the source)", () => {
+  const exact = labelNextDayMoves([100, 100.5, 99.9975]);
+  assert(exact[0].labelName === "HOLD", "exactly +0.5% is not a BUY");
+  assert(exact[1].labelName === "HOLD", "exactly -0.5% is not a SELL");
+
+  const custom = labelNextDayMoves([100, 100.5], 0.004);
+  assert(custom[0].labelName === "BUY", "a looser threshold makes the same move a BUY");
+});
+
+check("balancedClassWeights matches sklearn's n / (k * count_c)", () => {
+  const labels = [SIGNAL_CLASS.BUY, SIGNAL_CLASS.HOLD, SIGNAL_CLASS.HOLD, SIGNAL_CLASS.HOLD, SIGNAL_CLASS.SELL];
+  const w = balancedClassWeights(labels);
+  assertClose(w[SIGNAL_CLASS.BUY], 5 / (3 * 1), 1e-9, "rare BUY is up-weighted");
+  assertClose(w[SIGNAL_CLASS.HOLD], 5 / (3 * 3), 1e-9, "dominant HOLD is down-weighted");
+  assertClose(w[SIGNAL_CLASS.SELL], 5 / (3 * 1), 1e-9, "rare SELL is up-weighted");
+  assert(w[SIGNAL_CLASS.BUY] > w[SIGNAL_CLASS.HOLD], "the minority class always weighs more");
+  assert(Object.keys(balancedClassWeights([])).length === 0, "an empty label set yields no weights");
+
+  const dist = labelDistribution(labels);
+  assert(dist.buy === 1 && dist.hold === 3 && dist.sell === 1 && dist.total === 5, "distribution counts agree");
+});
+
+check("spread encoding round-trips and guarantees low <= close <= high", () => {
+  const rows = [
+    { high: 105, low: 95, close: 100 },
+    { high: 112, low: 101, close: 110 },
+  ];
+  const enc = encodeSpreads(rows);
+  assertClose(enc[0].highSpread, 5, 1e-9, "high spread is high - close");
+  assertClose(enc[0].lowSpread, 5, 1e-9, "low spread is close - low");
+  assertClose(enc[1].prevClose, 100, 1e-9, "prev close is chained from the series");
+
+  const back = decodeSpreads(enc[1]);
+  assertClose(back.high, 112, 1e-9, "high reconstructs exactly");
+  assertClose(back.low, 101, 1e-9, "low reconstructs exactly");
+  assertClose(back.close, 110, 1e-9, "close is carried unchanged");
+
+  // A forecaster emitting negative spreads cannot produce an incoherent bar.
+  const broken = decodeSpreads({ close: 100, highSpread: -4, lowSpread: -6, prevClose: 100 });
+  assert(broken.high >= broken.close, "abs-clamped high stays above close");
+  assert(broken.low <= broken.close, "abs-clamped low stays below close");
+  assert(broken.open >= broken.low && broken.open <= broken.high, "the synthesised open is clamped into the bar");
 });
 
 // ------------------------------------------------------------ summary
