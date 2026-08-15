@@ -76,7 +76,7 @@ function Reveal({
 const SOURCES = [
   "NSE",
   "BSE",
-  "Zerodha Kite Connect",
+  "Bulk & block deals",
   "Quarterly results",
   "Corporate actions",
   "Finnhub",
@@ -107,7 +107,7 @@ const FEATURES = [
     icon: LineChart,
     kicker: "03 — Paper trading",
     title: "Trade the thesis before you risk the capital.",
-    body: "Place the position on paper at live market prices, track P&L through the 9:15–15:30 session, and review what the idea actually earned. Connect Zerodha Kite when you're ready to take it live.",
+    body: "Place the position on paper at live market prices, track P&L through the 9:15–15:30 session, and review what the idea actually earned. Position sizing and risk limits are enforced on every simulated fill, exactly as they would be with real money.",
     image: "/landing/dashboard-real-3.png",
     alt: "Paper trading positions and profit and loss view",
   },

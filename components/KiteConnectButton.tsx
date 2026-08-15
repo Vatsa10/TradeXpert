@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Link2, Loader2 } from "lucide-react";
+import { Link2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -38,32 +38,11 @@ export default function KiteConnectButton({ className }: { className?: string })
     load();
   }, [load]);
 
-  if (loading) {
-    return (
-      <div
-        className={cn(
-          "flex items-center gap-2 rounded-lg border border-zinc-800 bg-[#141414] px-3 py-2 text-sm text-gray-500",
-          className
-        )}
-      >
-        <Loader2 className="size-4 animate-spin" />
-        Checking Zerodha link…
-      </div>
-    );
-  }
-
-  if (!status?.configured) {
-    return (
-      <div
-        className={cn(
-          "rounded-lg border border-dashed border-zinc-800 px-3 py-2 text-sm text-gray-500",
-          className
-        )}
-      >
-        Kite API keys not set — broker data unavailable.
-      </div>
-    );
-  }
+  // Kite is a personal, owner-only broker link. Anyone who is not the owner
+  // (or any deployment without broker keys) sees nothing at all — not a
+  // placeholder, not an explanation. Rendering "keys not set" advertised a
+  // feature that other accounts can never use.
+  if (loading || !status?.configured) return null;
 
   if (!status.connected) {
     return (
