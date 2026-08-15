@@ -26,6 +26,12 @@ import { getIndianHistorical, isLikelyIndianTicker } from "@/lib/data/providers/
 
 /** Per-fetch budget. A section that misses it is simply reported missing. */
 const FETCH_TIMEOUT_MS = 3000;
+/**
+ * History gets a wider budget than the quote: a year of NSE data is fetched in
+ * 100-day chunks, so a cold cache legitimately needs several round trips. It is
+ * cached afterwards, so this is a first-request cost, not a steady-state one.
+ */
+const SERIES_TIMEOUT_MS = 5000;
 
 /** Nominal capital the illustrative risk gate is computed against. */
 export const ILLUSTRATIVE_CAPITAL = 100000;
@@ -169,7 +175,10 @@ export function assembleInstantPanel(parts: {
   if (!metrics) missing.push("metrics");
 
   const series = parts.series && parts.series.length > 0 ? parts.series : null;
-  const indicators = series ? computeIndicatorsFromSeries(series) : null;
+  const computed = series ? computeIndicatorsFromSeries(series) : null;
+  // A short series yields an empty object, which would otherwise be reported as
+  // a present-but-blank section.
+  const indicators = computed && Object.keys(computed).length > 0 ? computed : null;
   if (!indicators) missing.push("indicators");
 
   const regimeResult = series ? detectRegime(series) : null;
@@ -234,14 +243,24 @@ export async function buildInstantPanel(symbol: string, userEmail?: string): Pro
   const [quote, rawMetrics, series] = await Promise.all([
     withTimeout(getFinnhubQuote(symbol, userEmail)),
     withTimeout(getStockMetrics(symbol)),
-    withTimeout<OHLCV[] | null>(indian ? getIndianHistorical(symbol) : fetchDailySeries(symbol)),
+    // The regime detector needs 200 daily bars, so ask both providers for more
+    // than their defaults (100 AV bars / 180 NSE calendar days) — otherwise the
+    // regime section is structurally impossible to fill.
+    withTimeout<OHLCV[] | null>(
+      indian ? getIndianHistorical(symbol, 365) : fetchDailySeries(symbol, { outputsize: "full" }),
+      SERIES_TIMEOUT_MS
+    ),
   ]);
+
+  // `full` can return two decades of bars; nothing here looks further back than
+  // 200, so keep the working set bounded.
+  const trimmed = series && series.length > 400 ? series.slice(-400) : series;
 
   return assembleInstantPanel({
     symbol,
     quote,
     rawMetrics,
-    series: series ?? null,
+    series: trimmed ?? null,
     elapsedMs: Date.now() - startedAt,
   });
 }
