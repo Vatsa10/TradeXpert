@@ -280,19 +280,29 @@ export const getStocksDetails = cache(async (symbol: string) => {
   const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
 
   try {
-    const [quote, profile, financials] = await Promise.all([
-      fetchJSON(
-        `${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${token}`
-      ),
-      fetchJSON(
-        `${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${token}`,
-        3600
-      ),
-      fetchJSON(
-        `${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${token}`,
-        1800
-      ),
-    ]);
+    // allSettled, not all: /stock/metric is premium-gated for some symbols and
+    // a single 403 there must not sink the quote + profile we can still show.
+    const [quoteResult, profileResult, financialsResult] =
+      await Promise.allSettled([
+        fetchJSON(
+          `${FINNHUB_BASE_URL}/quote?symbol=${cleanSymbol}&token=${token}`
+        ),
+        fetchJSON(
+          `${FINNHUB_BASE_URL}/stock/profile2?symbol=${cleanSymbol}&token=${token}`,
+          3600
+        ),
+        fetchJSON(
+          `${FINNHUB_BASE_URL}/stock/metric?symbol=${cleanSymbol}&metric=all&token=${token}`,
+          1800
+        ),
+      ]);
+
+    const quote =
+      quoteResult.status === "fulfilled" ? quoteResult.value : null;
+    const profile =
+      profileResult.status === "fulfilled" ? profileResult.value : null;
+    const financials =
+      financialsResult.status === "fulfilled" ? financialsResult.value : null;
 
     // Type cast the responses
     const quoteData = quote as QuoteData;
@@ -300,8 +310,15 @@ export const getStocksDetails = cache(async (symbol: string) => {
     const financialsData = financials as FinancialsData;
 
     // Check if we got valid quote and profile data
-    if (!quoteData?.c || !profileData?.name)
-      throw new Error("Invalid stock data received from API");
+    // Unknown/uncovered symbol (Finnhub's free tier is US-only, so every .NS
+    // ticker lands here). Return null so the page can render its 404 instead of
+    // throwing a 500 at the user.
+    if (!quoteData?.c || !profileData?.name) {
+      console.warn(
+        `[Finnhub] No usable detail data for ${cleanSymbol} — rendering not-found`
+      );
+      return null;
+    }
 
     const changePercent = quoteData.dp || 0;
     const peRatio = financialsData?.metric?.peNormalizedAnnual || null;
@@ -319,7 +336,7 @@ export const getStocksDetails = cache(async (symbol: string) => {
       ),
     };
   } catch (error) {
-    console.error(`Error fetching details for ${cleanSymbol}:`, error);
-    throw new Error("Failed to fetch stock details");
+    console.error(`[Finnhub] Error fetching details for ${cleanSymbol}:`, error);
+    return null;
   }
 });

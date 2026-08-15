@@ -79,8 +79,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (Object.keys(symbolPrices).length < 2) {
+      // Say *which* symbols dropped and why — a bare "insufficient history" is
+      // indistinguishable from an outage on the client side.
+      const failReasons: string[] = [];
+      if (fetchFailed.length) failReasons.push(`price data unavailable: ${fetchFailed.join(", ")}`);
+      if (shortHistory.length)
+        failReasons.push(`insufficient price history (<20 days): ${shortHistory.join(", ")}`);
       return NextResponse.json(
-        { error: "Insufficient price history for optimization" },
+        {
+          error: "Insufficient price history for optimization",
+          droppedSymbols,
+          detail: failReasons.join("; ") || null,
+        },
         { status: 422 }
       );
     }

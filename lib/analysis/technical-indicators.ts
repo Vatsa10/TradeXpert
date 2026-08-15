@@ -61,7 +61,18 @@ export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> 
 
         const data = await res.json();
         const series = data?.["Time Series (Daily)"];
-        if (!series) throw new Error("Alpha Vantage daily series unavailable");
+        if (!series) {
+          // Alpha Vantage answers 200-OK with a prose Note/Information body when
+          // it throttles (free tier: 5 req/min, 25 req/day). Reporting that as a
+          // flat "unavailable" made a quota problem look like a missing symbol.
+          const notice =
+            data?.["Note"] ?? data?.["Information"] ?? data?.["Error Message"];
+          throw new Error(
+            notice
+              ? `Alpha Vantage refused the request: ${String(notice).slice(0, 200)}`
+              : "Alpha Vantage daily series unavailable"
+          );
+        }
 
         const rows: OHLCV[] = Object.keys(series)
           .sort()
@@ -84,7 +95,14 @@ export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> 
       getTTL("alphaVantage"),
       true
     );
-  } catch {
+  } catch (error) {
+    // Never swallow this silently: a null here degrades optimizer/indicator
+    // output into "insufficient history", and without the reason the failure is
+    // undiagnosable from the outside.
+    console.warn(
+      `[AlphaVantage] daily series failed for ${symbol}:`,
+      error instanceof Error ? error.message : error
+    );
     return null;
   }
 }
