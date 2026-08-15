@@ -50,9 +50,12 @@ async function fetchJSON<T>(
     res = await fetch(url, { ...options, signal: AbortSignal.timeout(FETCH_ABORT_MS) });
   } catch (error: any) {
     outageCache.set(host, Date.now() + OUTAGE_TTL_MS);
-    // Single greppable line instead of a per-symbol stack trace.
+    // Single greppable line instead of a per-symbol stack trace. Tagged by the
+    // host actually being called — this helper serves Alpha Vantage too, and a
+    // hardcoded [Finnhub] tag sent people debugging the wrong upstream.
+    const tag = host.includes("alphavantage") ? "AlphaVantage" : "Finnhub";
     console.error(
-      `[Finnhub] fetch-failed host=${host} errorType=${error?.name || "Error"} — cooling down ${OUTAGE_TTL_MS / 1000}s`
+      `[${tag}] fetch-failed host=${host} errorType=${error?.name || "Error"} — cooling down ${OUTAGE_TTL_MS / 1000}s`
     );
     throw error instanceof Error ? error : new Error(String(error));
   }
