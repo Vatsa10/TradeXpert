@@ -9,24 +9,30 @@ import { detectPersona } from "./personas";
 import { getDeepSeekLLM } from "./deepseek";
 import { isLikelyIndianTicker } from "@/lib/data/providers/nse-india";
 
+// NOTE on maxOutputTokens: these Gemini 3 models are *thinking* models — their
+// internal reasoning tokens are drawn from the same output budget as the visible
+// answer. The previous 1024/1400/2200 budgets were being consumed almost
+// entirely by thinking, so the JSON came back cut off mid-string (observed:
+// rawLen=294 for a pro-mode macro query) and every such request fell through to
+// "Analysis is temporarily unavailable". Budget for thinking + payload.
 const fastLLM = new ChatGoogleGenerativeAI({
   model: "gemini-3.1-flash-lite-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  maxOutputTokens: 1024,
+  maxOutputTokens: 4096,
   temperature: 0.25,
 }) as any;
 
 const proFlashLLM = new ChatGoogleGenerativeAI({
   model: "gemini-3-flash-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  maxOutputTokens: 1400,
+  maxOutputTokens: 8192,
   temperature: 0.2,
 }) as any;
 
 const proReasoningLLM = new ChatGoogleGenerativeAI({
   model: "gemini-3.1-pro-preview",
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  maxOutputTokens: 2200,
+  maxOutputTokens: 8192,
   temperature: 0.15,
 }) as any;
 
@@ -445,7 +451,16 @@ function parseWithLogging(
 ): Partial<LLMResponse> | null {
   const parsed = parseJSONResponse(raw);
   if (!parsed) {
-    logLLMFailure("json-parse", provider, mode, "unparseable LLM output", ` raw="${snippet(raw, 200)}"`);
+    // rawLen + the tail are what distinguish "model ignored the schema" from
+    // "output hit maxOutputTokens and got cut mid-JSON" — the 200-char head
+    // alone looked identical in both cases.
+    logLLMFailure(
+      "json-parse",
+      provider,
+      mode,
+      "unparseable LLM output",
+      ` rawLen=${raw.length} head="${snippet(raw, 120)}" tail="${snippet(raw.slice(-120), 120)}"`
+    );
   }
   return parsed;
 }

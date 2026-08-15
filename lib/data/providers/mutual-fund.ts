@@ -113,8 +113,14 @@ export async function getMutualFundDetail(schemeCode: number): Promise<MutualFun
       async () => {
         const url = `${MFAPI_BASE_URL}/${schemeCode}`;
         const json = await fetchJson(url);
+        // mfapi.in answers unknown scheme codes with status SUCCESS and a meta
+        // block of empty strings, which used to surface as a 200 with a blank
+        // scheme instead of a 404. Treat a nameless scheme as not found.
         if (json?.status !== "SUCCESS" || !json?.meta) {
           throw new Error(`mfapi.in returned no scheme payload for ${schemeCode}`);
+        }
+        if (!String(json.meta.scheme_name ?? "").trim()) {
+          throw new Error(`mfapi.in has no scheme named for code ${schemeCode}`);
         }
 
         // mfapi.in returns NAV as a string and publishes "N.A." / "0" rows for
@@ -139,7 +145,11 @@ export async function getMutualFundDetail(schemeCode: number): Promise<MutualFun
       NAV_HISTORY_TTL_MS,
       true
     );
-  } catch {
+  } catch (error) {
+    console.warn(
+      `[MF] scheme detail failed for ${schemeCode}:`,
+      error instanceof Error ? error.message : error
+    );
     return null;
   }
 }

@@ -1,7 +1,31 @@
 import { getCacheKey, getOrFetch, getTTL } from "@/lib/chat/cache";
 
 const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
-const TIMEOUT_MS = 2000;
+// Alpha Vantage's free tier throttles at ~1 request/second and answers 200-OK
+// with a prose "spread your requests out" body when exceeded. Callers such as
+// the portfolio optimizer fan out over up to 10 symbols at once, so an unpaced
+// Promise.all meant every symbol but the first came back empty. Serialise the
+// network hits through one queue that spaces them out; cache hits never reach
+// here, so warm paths stay fast.
+const AV_MIN_INTERVAL_MS = 1100;
+let avQueue: Promise<unknown> = Promise.resolve();
+let avLastRequestAt = 0;
+
+function paceAlphaVantage<T>(task: () => Promise<T>): Promise<T> {
+  const scheduled = avQueue.then(async () => {
+    const wait = AV_MIN_INTERVAL_MS - (Date.now() - avLastRequestAt);
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    avLastRequestAt = Date.now();
+    return task();
+  });
+  // Keep the chain alive regardless of individual failures.
+  avQueue = scheduled.catch(() => undefined);
+  return scheduled;
+}
+
+// Generous enough to cover the queue wait plus a slow upstream response; the
+// old 2s budget expired while a symbol was still sitting behind the pacer.
+const TIMEOUT_MS = 8000;
 
 export interface OHLCV {
   date: string;
@@ -56,7 +80,7 @@ export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> 
       cacheKey,
       async () => {
         const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${ALPHA_VANTAGE_API_KEY}`;
-        const res = await withTimeout(fetch(url), TIMEOUT_MS);
+        const res = await paceAlphaVantage(() => withTimeout(fetch(url), TIMEOUT_MS));
         if (!res) throw new Error("Alpha Vantage daily series request timed out");
 
         const data = await res.json();
