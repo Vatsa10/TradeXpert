@@ -15,12 +15,32 @@ export function isKiteConfigured(): boolean {
   return Boolean(process.env.KITE_API_KEY?.trim() && process.env.KITE_API_SECRET?.trim());
 }
 
-// Kite is a PERSONAL broker integration: when KITE_OWNER_EMAIL is set, only
-// that account may connect or consume Kite data — everyone else silently uses
-// the public NSE/BSE providers instead.
+// Kite is a PERSONAL broker integration: only KITE_OWNER_EMAIL may connect or
+// consume Kite data — everyone else silently falls back to the public NSE/BSE
+// providers and never learns the integration exists.
+//
+// Fail-closed in production. Locally an unset owner is a convenience (one
+// developer, one account), but shipping with keys and no owner would expose a
+// personal broker link to every signed-up stranger, so deployed builds deny
+// until the owner is named explicitly.
+let warnedMissingOwner = false;
+
 export function isKiteOwner(userEmail: string | null | undefined): boolean {
   const owner = process.env.KITE_OWNER_EMAIL?.trim().toLowerCase();
-  if (!owner) return true; // unset = single-user/dev deployment, no gating
+
+  if (!owner) {
+    if (process.env.NODE_ENV === "production") {
+      if (!warnedMissingOwner) {
+        warnedMissingOwner = true;
+        console.error(
+          "[Kite] KITE_OWNER_EMAIL is not set — refusing all Kite access. Set it to the owner's account email to enable the broker link."
+        );
+      }
+      return false;
+    }
+    return true; // local dev, single account
+  }
+
   return !!userEmail && userEmail.trim().toLowerCase() === owner;
 }
 
