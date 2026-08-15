@@ -7,6 +7,7 @@ import AnalysisRequest from "@/database/models/analysis.model";
 import { v4 as uuidv4 } from "uuid";
 import { auth } from "@/lib/better-auth/auth";
 import { headers } from "next/headers";
+import { buildInstantPanel } from "@/lib/analysis/instant-panel";
 
 /**
  * Start a stock analysis using Inngest
@@ -19,17 +20,42 @@ export async function startAnalysisAction(symbol: string, companyName: string) {
   await connectToDatabase();
   
   const requestId = uuidv4();
-  
-  // 1. Create a request in MongoDB
+
+  // 1. Deterministic instant panel (no LLM, sub-second) so the page has real
+  // numbers to render before the background agents produce anything. A failure
+  // here must not block the analysis — the panel stage is just marked error.
+  const startedAt = new Date();
+  let instantPanel: Awaited<ReturnType<typeof buildInstantPanel>> | null = null;
+  let instantError: string | undefined;
+  try {
+    instantPanel = await buildInstantPanel(symbol, userEmail);
+  } catch (error) {
+    instantError = error instanceof Error ? error.message : "Instant panel failed";
+    console.error("[analysis] instant panel error:", error);
+  }
+
+  // 2. Create a request in MongoDB
   await AnalysisRequest.create({
     requestId,
     userEmail,
     symbol,
     companyName,
     status: "processing",
+    instantPanel,
+    stages: {
+      instant: {
+        state: instantPanel ? "completed" : "error",
+        startedAt,
+        completedAt: new Date(),
+        error: instantError,
+      },
+      quant: { state: "pending", startedAt },
+      qual: { state: "pending", startedAt },
+      report: { state: "pending", startedAt },
+    },
   });
-  
-  // 2. Trigger Inngest background job
+
+  // 3. Trigger Inngest background job
   await inngest.send({
     name: "app/analysis.requested",
     data: {
@@ -40,7 +66,7 @@ export async function startAnalysisAction(symbol: string, companyName: string) {
     },
   });
   
-  return { request_id: requestId, status: "processing" };
+  return { request_id: requestId, status: "processing", instant_panel: instantPanel };
 }
 
 /**
@@ -65,6 +91,10 @@ export async function getAnalysisStatusAction(requestId: string) {
     request_id: request.requestId,
     status: request.status,
     report: (request as any).report, // Final report data
+    instant_panel: (request as any).instantPanel ?? null,
+    quant_analysis: (request as any).quantAnalysis ?? null,
+    qual_analysis: (request as any).qualAnalysis ?? null,
+    stages: (request as any).stages ?? null,
     error: (request as any).error,
     success: request.status === "completed",
     symbol: request.symbol,

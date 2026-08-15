@@ -14,6 +14,27 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { SYMBOL_INFO_WIDGET_CONFIG, TECHNICAL_ANALYSIS_WIDGET_CONFIG } from "@/lib/constants";
+import InstantSnapshot from "@/components/analysis/InstantSnapshot";
+import {
+  QualStageCard,
+  QuantStageCard,
+  StageErrorCard,
+  StageRail,
+  StageSkeleton,
+} from "@/components/analysis/AnalysisStages";
+import {
+  isIndianSymbol,
+  normalizeInstantPanel,
+  normalizeQual,
+  normalizeQuant,
+  stageStateFrom,
+  type InstantPanelView,
+  type StageKey,
+  type StageState,
+} from "@/components/analysis/progressive-types";
+import { QualitativeAnalysis, QuantitativeAnalysis } from "@/lib/analysis/types";
+
+const POLL_INTERVAL_MS = 2000;
 
 export default function AnalysisDashboard({
   initialRequestId,
@@ -34,7 +55,52 @@ export default function AnalysisDashboard({
   const [report, setReport] = useState<StockAnalysisReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Progressive stage payloads. All optional: analyses created before the
+  // staged pipeline simply never populate them and render report-only.
+  const [instantPanel, setInstantPanel] = useState<InstantPanelView | null>(null);
+  const [quant, setQuant] = useState<QuantitativeAnalysis | null>(null);
+  const [qual, setQual] = useState<QualitativeAnalysis | null>(null);
+  const [stageErrors, setStageErrors] = useState<Partial<Record<StageKey, string>>>({});
+  const [serverStages, setServerStages] = useState<Partial<Record<StageKey, StageState>>>({});
+
   const router = useRouter();
+
+  const resetStages = () => {
+    setInstantPanel(null);
+    setQuant(null);
+    setQual(null);
+    setStageErrors({});
+    setServerStages({});
+  };
+
+  /** Folds one polling response into the per-stage UI state. */
+  const applyStageData = (res: any, fallbackSymbol?: string) => {
+    if (!res) return;
+
+    const panel = normalizeInstantPanel(res.instant_panel, fallbackSymbol || res.symbol);
+    if (panel) setInstantPanel(panel);
+
+    const nextQuant = normalizeQuant(res.quant_analysis);
+    if (nextQuant) setQuant(nextQuant);
+
+    const nextQual = normalizeQual(res.qual_analysis);
+    if (nextQual) setQual(nextQual);
+
+    const stages = res.stages;
+    if (stages && typeof stages === "object") {
+      const states: Partial<Record<StageKey, StageState>> = {};
+      const errors: Partial<Record<StageKey, string>> = {};
+      (["instant", "quant", "qual", "report"] as StageKey[]).forEach((key) => {
+        const state = stageStateFrom(stages[key]);
+        if (state) states[key] = state;
+        if (typeof stages[key]?.error === "string" && stages[key].error) {
+          errors[key] = stages[key].error;
+        }
+      });
+      setServerStages(states);
+      setStageErrors(errors);
+    }
+  };
 
   // Handle loading initial report from history
   useEffect(() => {
@@ -44,6 +110,8 @@ export default function AnalysisDashboard({
         setStatus("processing");
         try {
           const res = await getAnalysisStatusAction(initialRequestId);
+          resetStages();
+          applyStageData(res);
           if (res.status === "completed" && res.report) {
             setReport(res.report as StockAnalysisReport);
             setStatus("completed");
@@ -75,6 +143,10 @@ export default function AnalysisDashboard({
           let resA = requestId ? await getAnalysisStatusAction(requestId) : null;
           // Check Stock B
           let resB = requestIdB ? await getAnalysisStatusAction(requestIdB) : null;
+
+          // Reveal whatever stages have landed so far (single-symbol mode only:
+          // the comparison view renders from the two finished reports).
+          if (mode === "single") applyStageData(resA);
 
           const doneA = !requestId || (resA?.status === "completed");
           const doneB = !requestIdB || (resB?.status === "completed");
@@ -114,7 +186,7 @@ export default function AnalysisDashboard({
         } catch (err) {
           console.error("Polling error:", err);
         }
-      }, 3000);
+      }, POLL_INTERVAL_MS);
     }
 
     return () => {
@@ -171,6 +243,7 @@ export default function AnalysisDashboard({
     setReport(null);
     setSuggestionsA([]);
     setSuggestionsB([]);
+    resetStages();
 
     try {
       // 1. Fetch Company Name(s) - Optional but good for DB
@@ -180,6 +253,13 @@ export default function AnalysisDashboard({
       // 2. Start Analysis for A
       const resA = await startAnalysisAction(symbol.toUpperCase(), nameA);
       setRequestId(resA.request_id);
+
+      // The instant panel comes back with the very first response, so it paints
+      // before the first poll ever fires.
+      if (mode === "single") {
+        const panel = normalizeInstantPanel(resA.instant_panel, symbol.toUpperCase());
+        if (panel) setInstantPanel(panel);
+      }
 
       // 3. Start Analysis for B if in compare mode
       if (mode === "compare") {
@@ -197,6 +277,62 @@ export default function AnalysisDashboard({
       setLoading(false);
     }
   };
+
+  const currency: "INR" | "USD" =
+    instantPanel?.currency ?? (isIndianSymbol(symbol) ? "INR" : "USD");
+
+  const stageState = (key: StageKey, hasPayload: boolean): StageState =>
+    hasPayload ? "done" : stageErrors[key] ? "error" : (serverStages[key] ?? "pending");
+
+  const stageStates: Record<StageKey, StageState> = {
+    instant: stageState("instant", !!instantPanel),
+    quant: stageState("quant", !!quant),
+    qual: stageState("qual", !!qual),
+    report: stageState("report", !!report),
+  };
+
+  // Only single-symbol runs are progressive; comparisons render from the two
+  // finished reports on the compare route.
+  const showProgressive =
+    mode === "single" &&
+    (!!instantPanel || !!quant || !!qual || Object.keys(serverStages).length > 0);
+
+  const progressiveSection = (awaitingReport: boolean) => (
+    <div className="space-y-4">
+      <StageRail stages={stageStates} />
+
+      {instantPanel ? (
+        <InstantSnapshot panel={instantPanel} />
+      ) : stageErrors.instant ? (
+        <StageErrorCard title="Instant Snapshot" message={stageErrors.instant} />
+      ) : (
+        <StageSkeleton label="Building instant snapshot…" />
+      )}
+
+      {quant ? (
+        <QuantStageCard quant={quant} currency={currency} error={stageErrors.quant} />
+      ) : stageErrors.quant ? (
+        <StageErrorCard title="Quantitative Agent" message={stageErrors.quant} />
+      ) : (
+        <StageSkeleton label="Quantitative agent analyzing…" />
+      )}
+
+      {qual ? (
+        <QualStageCard qual={qual} error={stageErrors.qual} />
+      ) : stageErrors.qual ? (
+        <StageErrorCard title="Sentiment Agent" message={stageErrors.qual} />
+      ) : (
+        <StageSkeleton label="Sentiment agent analyzing…" />
+      )}
+
+      {awaitingReport &&
+        (stageErrors.report ? (
+          <StageErrorCard title="Investment Memo" message={stageErrors.report} />
+        ) : (
+          <StageSkeleton label="Compiling investment memo…" />
+        ))}
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
@@ -350,7 +486,9 @@ export default function AnalysisDashboard({
 
       {/* Analysis Container */}
       <div className="min-h-[400px]">
-        {status === "processing" && (
+        {status === "processing" && showProgressive && progressiveSection(true)}
+
+        {status === "processing" && !showProgressive && (
           <div className="flex flex-col items-center justify-center py-32 space-y-6">
             <div className="relative flex items-center justify-center">
               <div className="absolute w-12 h-12 border border-blue-500/20 rounded-full animate-ping" />
@@ -381,6 +519,9 @@ export default function AnalysisDashboard({
 
         {status === "completed" && report && (
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-1000">
+            {/* Stage output kept above the memo; absent for pre-pipeline analyses. */}
+            {showProgressive && progressiveSection(false)}
+
             {/* Real-time Technical Visuals Overlay */}
             <div className="space-y-6">
               {/* Main Technical Chart - Full Width */}

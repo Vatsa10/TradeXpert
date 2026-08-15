@@ -632,10 +632,21 @@ async function fetchBseQuote(symbol: string): Promise<IndianStockQuote | null> {
 // to be an NSE print: the two venues quote the same stock a few paise apart and
 // mislabelling which one produced the number is the kind of quiet lie the
 // data-cascade rule exists to prevent.
+// Track whether NSE's quote endpoint has recovered. While it is known-dead we
+// go STRAIGHT to BSE: the chat queue gives the whole price task a small budget,
+// and burning ~2s on a guaranteed 403 + cookie re-prime made every Indian
+// quote time out downstream even though the BSE path works fine.
+let nseQuoteDeadUntil = Date.now() + 0; // probe on first call after boot
+const NSE_QUOTE_RETRY_MS = 30 * 60 * 1000; // re-probe the NSE path every 30min
+
 async function fetchIndianQuote(symbol: string): Promise<IndianStockQuote | null> {
+  if (Date.now() < nseQuoteDeadUntil) {
+    return fetchBseQuote(symbol);
+  }
   try {
     return await fetchNseQuote(symbol);
   } catch {
+    nseQuoteDeadUntil = Date.now() + NSE_QUOTE_RETRY_MS;
     return fetchBseQuote(symbol);
   }
 }

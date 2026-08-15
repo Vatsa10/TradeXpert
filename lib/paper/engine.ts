@@ -247,7 +247,7 @@ export async function resetAccount(
   const account = await PaperAccountModel.findOneAndUpdate(
     { userEmail: email },
     { $set: { startingCapital, cash: startingCapital, createdAt: new Date() } },
-    { new: true, upsert: true }
+    { returnDocument: "after", upsert: true }
   );
   return account as PaperAccount;
 }
@@ -361,7 +361,7 @@ export async function executePaperTrade(
     const updated = await PaperAccountModel.findOneAndUpdate(
       { userEmail: email, cash: { $gte: required } },
       { $inc: { cash: -required } },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (!updated) {
       return {
@@ -432,7 +432,7 @@ export async function executePaperTrade(
   const updated = await PaperAccountModel.findOneAndUpdate(
     { userEmail: email },
     { $inc: { cash: proceeds } },
-    { new: true }
+    { returnDocument: "after" }
   );
 
   return {

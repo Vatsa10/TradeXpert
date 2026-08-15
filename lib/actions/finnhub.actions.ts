@@ -14,19 +14,52 @@ const FINNHUB_BASE_URL = "https://finnhub.io/api/v1";
 const NEXT_PUBLIC_FINNHUB_API_KEY =
   process.env.NEXT_PUBLIC_FINNHUB_API_KEY ?? "";
 
+// When the upstream is unreachable (connect timeout), every caller used to
+// hang for undici's default 10s and dump a full stack trace per symbol.
+// A short abort + a 60s negative cache keeps one outage from stalling
+// server-rendered pages or spamming the log.
+const FETCH_ABORT_MS = 2500;
+const outageCache = new Map<string, number>();
+const OUTAGE_TTL_MS = 60 * 1000;
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown";
+  }
+}
+
 async function fetchJSON<T>(
   url: string,
   revalidateSeconds?: number
 ): Promise<T> {
+  const host = hostOf(url);
+  const outageUntil = outageCache.get(host);
+  if (outageUntil && outageUntil > Date.now()) {
+    throw new Error(`Upstream ${host} in outage cooldown`);
+  }
+
   const options: RequestInit & { next?: { revalidate?: number } } =
     revalidateSeconds
       ? { cache: "force-cache", next: { revalidate: revalidateSeconds } }
       : { cache: "no-store" };
 
-  const res = await fetch(url, options);
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, signal: AbortSignal.timeout(FETCH_ABORT_MS) });
+  } catch (error: any) {
+    outageCache.set(host, Date.now() + OUTAGE_TTL_MS);
+    // Single greppable line instead of a per-symbol stack trace.
+    console.error(
+      `[Finnhub] fetch-failed host=${host} errorType=${error?.name || "Error"} — cooling down ${OUTAGE_TTL_MS / 1000}s`
+    );
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Fetch failed ${res.status}: ${text}`);
+    throw new Error(`Fetch failed ${res.status}: ${text.slice(0, 200)}`);
   }
   return (await res.json()) as T;
 }
@@ -151,8 +184,9 @@ export const searchStocks = cache(
               // Revalidate every hour
               const profile = await fetchJSON<any>(url, 3600);
               return { sym, profile } as { sym: string; profile: any };
-            } catch (e) {
-              console.error("Error fetching profile2 for", sym, e);
+            } catch {
+              // fetchJSON already logged the outage once per host — a per-symbol
+              // stack trace here was pure noise during upstream blips.
               return { sym, profile: null } as { sym: string; profile: any };
             }
           })

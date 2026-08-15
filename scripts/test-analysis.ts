@@ -33,6 +33,17 @@ import {
   patternBias,
   type PatternHit,
 } from "@/lib/analysis/candlestick-patterns";
+import {
+  ILLUSTRATIVE_CAPITAL,
+  assembleInstantPanel,
+  computeValuationFlags,
+} from "@/lib/analysis/instant-panel";
+import {
+  normalizeInstantPanel,
+  normalizeQual,
+  normalizeQuant,
+  stageStateFrom,
+} from "@/components/analysis/progressive-types";
 import { combineRegimeAndPatterns, formatRegimePatternInsight } from "@/lib/analysis/regime-playbook";
 import {
   SIGNAL_CLASS,
@@ -1647,6 +1658,154 @@ check("spread encoding round-trips and guarantees low <= close <= high", () => {
   assert(broken.high >= broken.close, "abs-clamped high stays above close");
   assert(broken.low <= broken.close, "abs-clamped low stays below close");
   assert(broken.open >= broken.low && broken.open <= broken.high, "the synthesised open is clamped into the bar");
+});
+
+
+// ------------------------------------------------- instant panel (stage 1)
+
+check("computeValuationFlags places price inside the 52-week range", () => {
+  const mid = computeValuationFlags({ price: 150, high52: 200, low52: 100 });
+  assertClose(mid.fiftyTwoWeekPositionPct!, 50, 1e-9, "midpoint of the range is 50%");
+
+  const high = computeValuationFlags({ price: 198, high52: 200, low52: 100 });
+  assertClose(high.fiftyTwoWeekPositionPct!, 98, 1e-9, "near the high reads 98%");
+  assert(high.flags.some((f) => f.includes("52-week high")), "a near-high position is flagged");
+
+  const low = computeValuationFlags({ price: 105, high52: 200, low52: 100 });
+  assert(low.flags.some((f) => f.includes("52-week low")), "a near-low position is flagged");
+
+  // Prices printed outside the trailing window clamp instead of overflowing.
+  const over = computeValuationFlags({ price: 260, high52: 200, low52: 100 });
+  assertClose(over.fiftyTwoWeekPositionPct!, 100, 1e-9, "above the window clamps to 100%");
+  const under = computeValuationFlags({ price: 40, high52: 200, low52: 100 });
+  assertClose(under.fiftyTwoWeekPositionPct!, 0, 1e-9, "below the window clamps to 0%");
+});
+
+check("computeValuationFlags never fabricates a missing input", () => {
+  const empty = computeValuationFlags({});
+  assert(empty.peRatio === null, "absent P/E stays null");
+  assert(empty.fiftyTwoWeekPositionPct === null, "absent range yields no position");
+  assert(empty.priceVsSma50Pct === null && empty.priceVsSma200Pct === null, "absent averages yield no distances");
+  assert(empty.flags.length === 0, "nothing is asserted about a stock with no data");
+
+  const degenerate = computeValuationFlags({ price: 100, high52: 100, low52: 100 });
+  assert(degenerate.fiftyTwoWeekPositionPct === null, "a zero-width 52-week range is unusable, not 0%");
+
+  const zeroSma = computeValuationFlags({ price: 100, sma50: 0 });
+  assert(zeroSma.priceVsSma50Pct === null, "a zero average never becomes a division by zero");
+});
+
+check("computeValuationFlags reports price-vs-average distance and P/E bands", () => {
+  const v = computeValuationFlags({ price: 110, sma50: 100, sma200: 125, pe: 45 });
+  assertClose(v.priceVsSma50Pct!, 10, 1e-9, "10% above the 50-day");
+  assertClose(v.priceVsSma200Pct!, -12, 1e-9, "12% below the 200-day");
+  assert(v.flags.some((f) => f.includes("above the 50-day")), "above/below wording follows the sign");
+  assert(v.flags.some((f) => f.includes("below the 200-day")), "the 200-day distance is described too");
+  assert(v.flags.some((f) => f.includes("Elevated trailing P/E")), "P/E above 40 is called elevated");
+
+  assert(
+    computeValuationFlags({ pe: -3 }).flags.some((f) => f.includes("Negative")),
+    "a negative P/E is reported as unprofitable, not as 'low'"
+  );
+  assert(
+    computeValuationFlags({ pe: 8 }).flags.some((f) => f.includes("Low trailing P/E")),
+    "a single-digit P/E is called low"
+  );
+});
+
+check("assembleInstantPanel builds every section from a full synthetic input", () => {
+  // 220 rising bars: enough history for SMA200, so the regime resolves.
+  const rows: OHLCV[] = Array.from({ length: 220 }, (_, i) => {
+    const close = 100 + i * 0.5;
+    return { date: `2024-01-${(i % 28) + 1}`, open: close - 0.2, high: close + 1, low: close - 1, close, volume: 1_000_000 };
+  });
+
+  const panel = assembleInstantPanel({
+    symbol: "TEST",
+    quote: { current: 209.5, change: 1.2, changePercent: 0.6, high: 210, low: 205, open: 206, prevClose: 208.3 },
+    rawMetrics: { metric: { peTTM: 22, "52WeekHigh": 220, "52WeekLow": 100, marketCapitalization: 5000 } },
+    series: rows,
+    elapsedMs: 120,
+    now: new Date("2026-01-01T00:00:00.000Z"),
+  });
+
+  assert(panel.symbol === "TEST", "the symbol is carried through");
+  assert(panel.missing.length === 0, "a complete input leaves nothing missing");
+  assert(panel.quote!.current === 209.5, "the quote is passed through untouched");
+  assertClose(panel.metrics!.market_cap!, 5e9, 1e-3, "Finnhub millions are normalized to raw currency");
+  assert(panel.indicators !== null && panel.indicators.rsi !== undefined, "indicators are computed from the series");
+  assert(panel.regime !== null && panel.regime.regime === "BULL", "a rising series detects a bull regime");
+  assert(typeof panel.regime!.summary === "string" && panel.regime!.summary.length > 0, "the regime carries a summary line");
+  assert(panel.valuation !== null && panel.valuation.peRatio === 22, "valuation reuses the normalized P/E");
+  assert(panel.riskGate !== null, "the risk gate is built once a price exists");
+  assertClose(panel.riskGate!.maxAllocationAmount, ILLUSTRATIVE_CAPITAL * 0.1, 1e-9, "the illustrative gate is 10% of nominal capital");
+  assert(panel.riskGate!.illustrativeCapital === ILLUSTRATIVE_CAPITAL, "the nominal capital is disclosed on the payload");
+  assert(panel.riskGate!.note.toLowerCase().includes("illustrative"), "the sizing is labelled illustrative");
+  assert(panel.generatedAt === "2026-01-01T00:00:00.000Z", "generatedAt is the injected clock");
+});
+
+check("assembleInstantPanel degrades section-by-section instead of failing", () => {
+  const bare = assembleInstantPanel({ symbol: "NODATA", quote: null, rawMetrics: null, series: null, elapsedMs: 5 });
+  assert(bare.quote === null && bare.metrics === null, "absent upstream data stays null");
+  assert(bare.indicators === null && bare.regime === null && bare.valuation === null, "derived sections stay null too");
+  assert(bare.riskGate === null, "no price means no sizing, rather than sizing against zero");
+  for (const section of ["quote", "metrics", "indicators", "regime", "valuation", "riskGate"]) {
+    assert(bare.missing.includes(section), `${section} is listed as missing`);
+  }
+
+  // Quote missing but history present: the last close is a real observed
+  // price, so the panel still sizes and still flags the quote as missing.
+  const rows: OHLCV[] = Array.from({ length: 60 }, (_, i) => ({
+    date: `d${i}`, open: 50, high: 51, low: 49, close: 50, volume: 1000,
+  }));
+  const partial = assembleInstantPanel({ symbol: "PART", quote: null, rawMetrics: null, series: rows, elapsedMs: 9 });
+  assert(partial.missing.includes("quote"), "the missing quote is still reported");
+  assert(partial.riskGate !== null && partial.riskGate.maxShares === Math.floor(10000 / 50), "sizing falls back to the last close");
+  assert(partial.missing.includes("regime"), "too little history means no regime, not a guessed one");
+});
+
+// ------------------------------------------------------- progressive UI view models
+
+check("normalizeInstantPanel maps a full panel onto the snapshot view", () => {
+  const panel = assembleInstantPanel({
+    symbol: "RELIANCE.NS",
+    quote: { current: 100, change: 2, changePercent: 2.04 },
+    rawMetrics: { peTTM: 22, marketCapitalization: 5000, "52WeekHigh": 120, "52WeekLow": 80 },
+    series: Array.from({ length: 260 }, (_, i) => ({
+      date: `d${i}`, open: 50 + i * 0.2, high: 51 + i * 0.2, low: 49 + i * 0.2, close: 50 + i * 0.2, volume: 1000,
+    })),
+    elapsedMs: 12,
+  });
+
+  const view = normalizeInstantPanel(panel);
+  assert(view !== null, "a populated panel produces a view");
+  assert(view!.currency === "INR", ".NS symbols render in rupees");
+  assert(view!.price === 100 && view!.changePercent === 2.04, "the quote carries through");
+  assert(view!.metrics.some((m) => m.label === "P/E"), "the P/E chip is present");
+  assert(view!.metrics.some((m) => m.label === "52w Position"), "the 52-week position chip is present");
+  assert(view!.indicators.some((i) => i.label === "RSI"), "the RSI badge is present");
+  assert(view!.valuationFlags.length > 0, "valuation flags carry through");
+  assert(
+    (view!.allocationNote ?? "").toLowerCase().includes("illustrative"),
+    "the allocation note keeps its illustrative label"
+  );
+});
+
+check("normalizeInstantPanel and the stage guards reject pre-pipeline documents", () => {
+  assert(normalizeInstantPanel(undefined) === null, "a missing panel renders nothing");
+  assert(normalizeInstantPanel({}) === null, "an empty panel renders nothing");
+
+  const empty = assembleInstantPanel({ symbol: "NODATA", quote: null, rawMetrics: null, series: null, elapsedMs: 1 });
+  assert(normalizeInstantPanel(empty) === null, "a fully-degraded panel renders nothing rather than a row of dashes");
+
+  assert(normalizeQuant(null) === null && normalizeQuant({}) === null, "a half-written quant stage is not rendered");
+  assert(normalizeQuant({ trend_analysis: "up" }) !== null, "a quant stage with prose is rendered");
+  assert(normalizeQual({ key_risks: [] }) === null, "a qual stage without prose is not rendered");
+  assert(normalizeQual({ news_summary: "n" }) !== null, "a qual stage with prose is rendered");
+
+  assert(stageStateFrom({ state: "completed" }) === "done", "completed maps to done");
+  assert(stageStateFrom({ state: "error" }) === "error", "error maps to error");
+  assert(stageStateFrom(undefined) === null, "an absent stage has no state to show");
 });
 
 // ------------------------------------------------------------ summary

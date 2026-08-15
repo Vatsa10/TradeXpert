@@ -156,16 +156,33 @@ export const sendDailyNewsSummary = inngest.createFunction(
 );
 
 /**
- * 4-Step Multi-Agent Stock Analysis Workflow
- * 1. Data Fetcher (Alpha Vantage + NewsAPI)
- * 2. Quantitative Analyst
- * 3. Qualitative Analyst
- * 4. Report Writer
+ * Progressive Multi-Agent Stock Analysis Workflow
+ * 1. Data Fetcher (Finnhub rich context + news)
+ * 2. Quantitative + Qualitative analysts IN PARALLEL, each persisted the
+ *    moment it lands so the polling client can reveal cards progressively.
+ * 3. Report Writer (needs both stages; errors clearly if either failed)
  */
+
+/** Result envelope so one failing agent never rejects the Promise.all. */
+type StageResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+const stageError = (error: any): string =>
+  error?.message || "Unknown error during AI synthesis";
+
 export const runStockAnalysis = inngest.createFunction(
   { id: "run-stock-analysis", triggers: [{ event: "app/analysis.requested" }] },
   async ({ event, step }: any) => {
     const { requestId, symbol, companyName, userEmail } = event.data;
+
+    const persist = async (stepId: string, update: Record<string, any>) =>
+      step.run(stepId, async () => {
+        await connectToDatabase();
+        await AnalysisRequest.findOneAndUpdate(
+          { requestId },
+          { ...update, updatedAt: new Date() }
+        );
+        return true;
+      });
 
     try {
       // 1. Fetch Data (Rich Finnhub Context + Fallback tools)
@@ -179,33 +196,85 @@ export const runStockAnalysis = inngest.createFunction(
         return { stockData: richContext, newsData: news };
       });
 
-      // 2. Quantitative Analysis
-      const quantAnalysis = await step.run("quant-analysis", async () => {
-        return await runQuantitativeAnalyst(stockData);
-      });
+      // 2. Quant + Qual run concurrently. Each chain persists its own stage as
+      // soon as it resolves, so quant is readable while qual is still running.
+      const quantChain = step
+        .run("quant-analysis", async (): Promise<StageResult<any>> => {
+          try {
+            return { ok: true, data: await runQuantitativeAnalyst(stockData) };
+          } catch (error: any) {
+            return { ok: false, error: stageError(error) };
+          }
+        })
+        .then(async (result: StageResult<any>) => {
+          await persist(
+            "persist-quant",
+            result.ok
+              ? { quantAnalysis: result.data, "stages.quant.state": "completed", "stages.quant.completedAt": new Date() }
+              : { "stages.quant.state": "error", "stages.quant.error": result.error, "stages.quant.completedAt": new Date() }
+          );
+          return result;
+        });
 
-      // 3. Qualitative Analysis
-      const qualAnalysis = await step.run("qual-analysis", async () => {
-        return await runQualitativeAnalyst(newsData);
-      });
+      const qualChain = step
+        .run("qual-analysis", async (): Promise<StageResult<any>> => {
+          try {
+            return { ok: true, data: await runQualitativeAnalyst(newsData) };
+          } catch (error: any) {
+            return { ok: false, error: stageError(error) };
+          }
+        })
+        .then(async (result: StageResult<any>) => {
+          await persist(
+            "persist-qual",
+            result.ok
+              ? { qualAnalysis: result.data, "stages.qual.state": "completed", "stages.qual.completedAt": new Date() }
+              : { "stages.qual.state": "error", "stages.qual.error": result.error, "stages.qual.completedAt": new Date() }
+          );
+          return result;
+        });
+
+      const [quantResult, qualResult]: [StageResult<any>, StageResult<any>] =
+        await Promise.all([quantChain, qualChain]);
+
+      // 3. The report writer needs both halves. Rather than hallucinate a
+      // recommendation from half the inputs, fail the report stage loudly.
+      if (!quantResult.ok || !qualResult.ok) {
+        const failed = [
+          !quantResult.ok ? `quantitative (${quantResult.error})` : null,
+          !qualResult.ok ? `qualitative (${qualResult.error})` : null,
+        ]
+          .filter(Boolean)
+          .join(" and ");
+        const message = `Report not generated: the ${failed} stage failed.`;
+
+        await persist("persist-report-blocked", {
+          status: "error",
+          error: message,
+          "stages.report.state": "error",
+          "stages.report.error": message,
+          "stages.report.completedAt": new Date(),
+        });
+
+        return { success: false, requestId, error: message };
+      }
 
       // 4. Final Report Generation
       const finalReport = await step.run("generate-report", async () => {
         return await runReportWriter(
           companyName,
           symbol,
-          quantAnalysis,
-          qualAnalysis
+          quantResult.data,
+          qualResult.data
         );
       });
 
       // 5. Update MongoDB with the result
-      await step.run("save-result", async () => {
-        await connectToDatabase();
-        await AnalysisRequest.findOneAndUpdate(
-          { requestId },
-          { status: "completed", report: finalReport, updatedAt: new Date() }
-        );
+      await persist("save-result", {
+        status: "completed",
+        report: finalReport,
+        "stages.report.state": "completed",
+        "stages.report.completedAt": new Date(),
       });
 
       return { success: true, requestId };
@@ -213,16 +282,12 @@ export const runStockAnalysis = inngest.createFunction(
       console.error("Inngest Analysis Error:", error);
 
       // Update MongoDB to reflect the error status
-      await step.run("mark-as-failed", async () => {
-        await connectToDatabase();
-        await AnalysisRequest.findOneAndUpdate(
-          { requestId },
-          {
-            status: "error",
-            error: error.message || "Unknown error during AI synthesis",
-            updatedAt: new Date()
-          }
-        );
+      await persist("mark-as-failed", {
+        status: "error",
+        error: stageError(error),
+        "stages.report.state": "error",
+        "stages.report.error": stageError(error),
+        "stages.report.completedAt": new Date(),
       });
 
       throw error; // Re-throw for Inngest retry logic

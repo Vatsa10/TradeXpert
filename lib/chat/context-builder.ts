@@ -5,6 +5,7 @@ import { analyzeSentiment } from "./sentiment";
 import { getTechnicalIndicators } from "./indicators";
 import { runPriorityQueue, QueuedTask } from "./queue";
 import { detectPulseScreen, getMarketPulse } from "@/lib/data/providers/market-pulse";
+import { isLikelyIndianTicker } from "@/lib/data/providers/nse-india";
 
 const TIMEOUT_MS = 3500;
 // The screener's own fetch aborts at 4000ms, so a 3500ms race here killed
@@ -245,11 +246,16 @@ export async function buildContext(
   const needsSearch = shouldUseWebSearch(intent, mode, !!entity.symbol);
   const needsIndicators = mode === "pro" && intent !== "price";
 
+  // Indian symbols route through Kite/NSE/BSE cascades with a cookie warmup on
+  // cold cache — 1300ms starved that path into a guaranteed timeout while the
+  // US path (single Finnhub call) is comfortably inside it.
+  const priceTimeoutMs = isLikelyIndianTicker(entity.symbol!) ? 4000 : 1300;
+
   const tasks: QueuedTask<unknown>[] = [
     {
       id: "price",
       priority: 1,
-      timeoutMs: 1300,
+      timeoutMs: priceTimeoutMs,
       task: () => fetchPriceData(entity.symbol!, userEmail),
     },
     {
@@ -373,7 +379,7 @@ export async function buildMultiStockContext(
     tasks.push({
       id: `price:${symbol}`,
       priority: 1,
-      timeoutMs: 1300,
+      timeoutMs: isLikelyIndianTicker(symbol) ? 4000 : 1300,
       task: () => fetchPriceData(symbol, userEmail),
     });
     tasks.push({
