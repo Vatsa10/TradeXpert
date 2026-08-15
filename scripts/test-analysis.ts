@@ -1808,6 +1808,36 @@ check("normalizeInstantPanel and the stage guards reject pre-pipeline documents"
   assert(stageStateFrom(undefined) === null, "an absent stage has no state to show");
 });
 
+check("a too-short series reports indicators as missing rather than blank", () => {
+  // computeIndicatorsFromSeries returns {} when there is not enough history;
+  // that must count as a missing section, not a present-but-empty one.
+  const panel = assembleInstantPanel({
+    symbol: "TINY",
+    quote: { current: 10 },
+    rawMetrics: null,
+    series: [{ date: "d0", open: 10, high: 11, low: 9, close: 10, volume: 1 }],
+    elapsedMs: 3,
+  });
+  assert(panel.indicators === null, "an unusable series yields no indicator object");
+  assert(panel.missing.includes("indicators"), "the indicators section is reported missing");
+  assert(panel.riskGate !== null, "the risk gate still computes from the observed price");
+});
+
+check("stage documents written by the Inngest pipeline match the UI's stage reader", () => {
+  // The pipeline persists dotted paths under `stages.<key>`; the reader expects
+  // `{ state, error }` at that path. This guards the cross-file contract.
+  const persisted = {
+    instant: { state: "completed" },
+    quant: { state: "completed" },
+    qual: { state: "error", error: "model refused" },
+    report: { state: "pending" },
+  };
+  assert(stageStateFrom(persisted.instant) === "done", "a completed stage reads as done");
+  assert(stageStateFrom(persisted.qual) === "error", "a failed stage reads as error");
+  assert(persisted.qual.error.length > 0, "the failure reason is carried on the stage, not a sibling field");
+  assert(stageStateFrom(persisted.report) === "pending", "an unfinished stage reads as pending");
+});
+
 // ------------------------------------------------------------ summary
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

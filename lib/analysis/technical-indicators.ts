@@ -67,10 +67,27 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null
 
 // Single OHLCV fetch replaces 4 separate rate-limited Alpha Vantage indicator
 // endpoint calls (RSI/MACD/SMA/ADX) previously used in lib/chat/indicators.ts.
-export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> {
+/**
+ * `outputsize=compact` returns 100 bars, which is not enough for the 200-bar
+ * SMA the regime detector needs — callers that want a regime must pass
+ * `outputsize: "full"`. Cached separately so the two never overwrite each other.
+ *
+ * `full` is a premium feature on some Alpha Vantage plans. The first refusal
+ * flips this process to compact permanently rather than burning one of the free
+ * tier's 25 daily requests on a call that can never succeed — the caller gets a
+ * shorter (100-bar) series instead of nothing at all.
+ */
+let alphaVantageFullUnsupported = false;
+
+export async function fetchDailySeries(
+  symbol: string,
+  options: { outputsize?: "compact" | "full" } = {}
+): Promise<OHLCV[] | null> {
   if (!ALPHA_VANTAGE_API_KEY) return null;
 
-  const cacheKey = getCacheKey("av_daily_series", { symbol });
+  const requested = options.outputsize ?? "compact";
+  const outputsize = requested === "full" && alphaVantageFullUnsupported ? "compact" : requested;
+  const cacheKey = getCacheKey("av_daily_series", { symbol, outputsize });
 
   // NOTE: the fetcher throws (rather than returning null) on failure so that
   // getOrFetch does not cache a null for the full alphaVantage TTL (3h) after
@@ -79,7 +96,7 @@ export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> 
     return await getOrFetch(
       cacheKey,
       async () => {
-        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${ALPHA_VANTAGE_API_KEY}`;
+        const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=${outputsize}&apikey=${ALPHA_VANTAGE_API_KEY}`;
         const res = await paceAlphaVantage(() => withTimeout(fetch(url), TIMEOUT_MS));
         if (!res) throw new Error("Alpha Vantage daily series request timed out");
 
@@ -120,13 +137,22 @@ export async function fetchDailySeries(symbol: string): Promise<OHLCV[] | null> 
       true
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    // "full is a premium feature": remember it and serve the compact series so
+    // indicators still render, instead of returning nothing.
+    if (outputsize === "full" && /premium/i.test(message)) {
+      alphaVantageFullUnsupported = true;
+      console.warn(
+        `[AlphaVantage] outputsize=full is not available on this key — falling back to compact (100 bars); regime detection stays unavailable for US symbols.`
+      );
+      return fetchDailySeries(symbol, { outputsize: "compact" });
+    }
+
     // Never swallow this silently: a null here degrades optimizer/indicator
     // output into "insufficient history", and without the reason the failure is
     // undiagnosable from the outside.
-    console.warn(
-      `[AlphaVantage] daily series failed for ${symbol}:`,
-      error instanceof Error ? error.message : error
-    );
+    console.warn(`[AlphaVantage] daily series failed for ${symbol}:`, message);
     return null;
   }
 }
