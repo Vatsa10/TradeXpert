@@ -9,7 +9,9 @@ import { connectToDatabase } from "@/database/mongoose";
 const UNDELIVERABLE_EMAIL_DOMAINS =
   /@(?:example\.(?:com|net|org)|(?:[^@]*\.)?(?:test|example|invalid|localhost))$/i;
 
-export function isUndeliverableEmail(email: string): boolean {
+// Not exported: a "use server" module may only export async functions, and
+// this guard is consumed in-file.
+function isUndeliverableEmail(email: string): boolean {
   return UNDELIVERABLE_EMAIL_DOMAINS.test(email.trim());
 }
 
