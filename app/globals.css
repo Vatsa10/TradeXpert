@@ -787,3 +787,223 @@ body:has(.lp) {
   .lp-marquee { animation: none; }
   .lp-card:hover { transform: none; }
 }
+
+/* ============================================================
+   TRADEXPERT APP DESIGN SYSTEM — dark product surface
+   ------------------------------------------------------------
+   Single source of truth for the signed-in app. The `.lp` cream
+   editorial tokens above are untouched: the marketing surface stays
+   light, the app stays dark, and BOTH derive from the same scale
+   (spacing, radii, type ramp, easing) declared here.
+
+   Direction: institutional. Bloomberg-terminal legibility with
+   modern restraint. Data is the hero, chrome recedes. Tabular
+   numerals everywhere a figure appears.
+
+   Consumed by components/system/* — see components/system/README.md.
+   ============================================================ */
+
+:root {
+  /* --- Surface elevation ladder (dark app) --- */
+  --app-bg: #08090a;          /* page ground */
+  --app-sunken: #0b0c0e;      /* wells, table heads, inset rows */
+  --app-raised: #101214;      /* panels / cards */
+  --app-raised-2: #16181b;    /* nested tiles inside a panel */
+  --app-overlay: #1b1e22;     /* dialogs, popovers, tooltips */
+  --app-hairline: #202429;    /* default 1px separation */
+  --app-hairline-strong: #2b3037; /* emphasised separation, table head rule */
+
+  /* --- Text hierarchy --- */
+  --app-text: #e9ebee;        /* primary — figures, headings */
+  --app-text-secondary: #99a0a8; /* labels, descriptions */
+  --app-text-faint: #6b727a;  /* meta, units, disabled */
+
+  /* --- Semantic colour --- */
+  --app-positive: #34c77b;
+  --app-positive-soft: rgba(52, 199, 123, 0.12);
+  --app-negative: #f0485f;
+  --app-negative-soft: rgba(240, 72, 95, 0.12);
+  --app-warning: #e8a33d;
+  --app-warning-soft: rgba(232, 163, 61, 0.12);
+  --app-info: #5b8def;
+  --app-info-soft: rgba(91, 141, 239, 0.12);
+  --app-neutral-soft: rgba(255, 255, 255, 0.05);
+
+  /* --- Market direction. ALWAYS use these for price/return data.
+         Aliased to positive/negative so a future red-up locale flip is
+         one edit, not a repo-wide find-and-replace. --- */
+  --app-up: var(--app-positive);
+  --app-up-soft: var(--app-positive-soft);
+  --app-down: var(--app-negative);
+  --app-down-soft: var(--app-negative-soft);
+
+  /* --- Accent. Amber, shared with the landing's --lp-amber, so the
+         product reads as one brand. Resolves the old yellow-vs-blue split. --- */
+  --app-brand: #e8ba40;
+  --app-brand-hover: #f2c85e;
+  --app-brand-soft: rgba(232, 186, 64, 0.12);
+  --app-brand-ink: #17130e;  /* text on a filled accent surface */
+
+  /* --- Focus --- */
+  --app-focus: rgba(232, 186, 64, 0.65);
+  --app-focus-ring: 0 0 0 2px var(--app-bg), 0 0 0 4px var(--app-focus);
+
+  /* --- Spacing scale (4px base; shared with the landing) --- */
+  --space-1: 0.25rem;  /* 4  */
+  --space-2: 0.5rem;   /* 8  */
+  --space-3: 0.75rem;  /* 12 */
+  --space-4: 1rem;     /* 16 */
+  --space-5: 1.5rem;   /* 24 */
+  --space-6: 2rem;     /* 32 */
+  --space-7: 3rem;     /* 48 */
+  --space-8: 4rem;     /* 64 */
+
+  /* --- Radius ladder --- */
+  --radius-chip: 9999px;
+  --radius-control: 0.375rem; /* inputs, buttons, cells   -> rounded-md */
+  --radius-tile: 0.5rem;      /* stat tiles, nested boxes -> rounded-lg */
+  --radius-panel: 0.75rem;    /* panels, cards            -> rounded-xl */
+
+  /* --- Type ramp --- */
+  --text-micro: 0.6875rem;  /* 11px — table units, footnotes */
+  --text-label: 0.75rem;    /* 12px — uppercase stat labels */
+  --text-body-sm: 0.8125rem;/* 13px — dense table body */
+  --text-body: 0.875rem;    /* 14px — default UI text */
+  --text-lead: 1rem;        /* 16px — panel titles */
+  --text-figure: 1.375rem;  /* 22px — stat values */
+  --text-figure-lg: 1.75rem;/* 28px — hero figure */
+  --text-title: 1.5rem;     /* 24px — page title */
+
+  /* --- Shadow ladder (dark surfaces need depth, not glow) --- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-3: 0 8px 32px -8px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.5);
+
+  /* --- Motion (skills.md) --- */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --dur-instant: 100ms;
+  --dur-fast: 160ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+  --stagger-step: 45ms;
+}
+
+/* Tailwind utility surface for the tokens above. Literal values (not
+   var() indirection) so opacity modifiers like `bg-up/10` still work. */
+@theme {
+  --color-surface: #08090a;
+  --color-surface-sunken: #0b0c0e;
+  --color-surface-raised: #101214;
+  --color-surface-raised-2: #16181b;
+  --color-surface-overlay: #1b1e22;
+  --color-hairline: #202429;
+  --color-hairline-strong: #2b3037;
+
+  --color-ink: #e9ebee;
+  --color-ink-secondary: #99a0a8;
+  --color-ink-faint: #6b727a;
+
+  --color-positive: #34c77b;
+  --color-negative: #f0485f;
+  --color-warning: #e8a33d;
+  --color-info: #5b8def;
+  --color-up: #34c77b;
+  --color-down: #f0485f;
+  --color-brand: #e8ba40;
+  --color-brand-hover: #f2c85e;
+  --color-brand-ink: #17130e;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+@layer utilities {
+  /* Every figure in the product uses tabular numerals so columns align. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Uppercase micro-label above a figure. */
+  .app-label {
+    font-size: var(--text-label);
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--app-text-faint);
+  }
+
+  /* Shared focus treatment — keyboard only. */
+  .app-focus:focus-visible {
+    outline: none;
+    box-shadow: var(--app-focus-ring);
+  }
+
+  /* Pressable feedback (skills.md: scale(0.97) on :active, never scale(0)). */
+  .app-press {
+    transition:
+      transform var(--dur-fast) var(--ease-out-strong),
+      background-color var(--dur-base) var(--ease-out-strong),
+      border-color var(--dur-base) var(--ease-out-strong),
+      color var(--dur-base) var(--ease-out-strong),
+      opacity var(--dur-base) var(--ease-out-strong);
+  }
+  .app-press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Entrance. transform/opacity only; delay driven by --i for stagger. */
+  .app-enter {
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity var(--dur-slow) var(--ease-out-strong),
+      transform var(--dur-slow) var(--ease-out-strong);
+    transition-delay: calc(var(--i, 0) * var(--stagger-step));
+  }
+  @starting-style {
+    .app-enter {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .app-shadow-1 { box-shadow: var(--shadow-1); }
+  .app-shadow-2 { box-shadow: var(--shadow-2); }
+  .app-shadow-3 { box-shadow: var(--shadow-3); }
+}
+
+/* Hover affordances are hover-capable-pointer only. */
+@media (hover: hover) and (pointer: fine) {
+  .app-row-hover {
+    transition: background-color var(--dur-fast) var(--ease-out-strong);
+  }
+  .app-row-hover:hover {
+    background-color: rgba(255, 255, 255, 0.025);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-enter {
+    transform: none;
+    transition: opacity var(--dur-base) linear;
+    transition-delay: 0ms;
+  }
+  .app-press,
+  .app-press:active:not(:disabled) {
+    transform: none;
+  }
+  .app-skeleton { animation: none !important; }
+}
+
+/* Skeleton shimmer — opacity only, so it stays off the compositor's
+   critical path and degrades cleanly under reduced motion. */
+@keyframes app-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.85; }
+}
+.app-skeleton {
+  animation: app-skeleton-pulse 1.6s var(--ease-in-out-strong) infinite;
+}
