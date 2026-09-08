@@ -2,7 +2,6 @@
 import { auth } from "@/lib/better-auth/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import AnalysisDashboard from "@/components/AnalysisDashboard";
 
 export const metadata = {
   title: "Stock AI Analysis | TradeXpert",

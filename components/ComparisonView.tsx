@@ -3,20 +3,34 @@
 import { useEffect, useState } from "react";
 import { getAnalysisStatusAction } from "@/lib/actions/analysis.actions";
 import { InvestmentReport as StockAnalysisReport } from "@/lib/analysis/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Scale, TrendingUp, AlertTriangle, CheckCircle2, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, TrendingUp, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { TECHNICAL_ANALYSIS_WIDGET_CONFIG, SYMBOL_INFO_WIDGET_CONFIG } from "@/lib/constants";
+import {
+  Badge,
+  EmptyState,
+  PageShell,
+  Panel,
+  SectionHeader,
+  Skeleton,
+  Surface,
+} from "@/components/system";
 
 const TV_SYMBOL_INFO_URL = "https://www.tradingview.com/external-embedding/embed-widget-symbol-info.js";
 const TV_TECHNICAL_ANALYSIS_URL = "https://www.tradingview.com/external-embedding/embed-widget-technical-analysis.js";
 
 interface ComparisonReport extends StockAnalysisReport {
   requestId: string;
+}
+
+/** Buy / Sell / Hold mapped onto the one semantic tone scale used app-wide. */
+function recommendationTone(recommendation: string) {
+  if (recommendation.includes("Buy")) return "positive" as const;
+  if (recommendation.includes("Sell")) return "negative" as const;
+  return "warning" as const;
 }
 
 export default function ComparisonView({ ids }: { ids: string[] }) {
@@ -45,147 +59,159 @@ export default function ComparisonView({ ids }: { ids: string[] }) {
     if (ids.length > 0) fetchReports();
   }, [ids]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
-        <p className="text-gray-400">Loading comparison data...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 custom-scrollbar overflow-x-hidden px-6">
-      <div className="flex items-center justify-between border-b border-[#27272A] pb-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="text-gray-500 hover:text-white hover:bg-[#1A1A1A]">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-              <Scale className="w-6 h-6 text-blue-500" />
-              Comparative Intelligence
-            </h1>
-            <p className="text-sm text-gray-500 font-medium">Cross-referencing TV Metrics & AI Sentiment</p>
-          </div>
+    <PageShell
+      width="wide"
+      eyebrow="Analysis"
+      title="Comparative Intelligence"
+      description="Cross-referencing live market metrics and AI sentiment."
+      actions={
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => router.back()}
+          aria-label="Go back"
+          className="app-press app-focus text-ink-secondary hover:bg-surface-raised-2 hover:text-ink"
+        >
+          <ArrowLeft className="size-5" />
+        </Button>
+      }
+    >
+      {loading ? (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {ids.map((id) => (
+            <div key={id} className="space-y-4">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-[540px] w-full rounded-xl" />
+            </div>
+          ))}
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {reports.map((report, idx) => (
-          <ReportSection key={report.requestId} report={report} idx={idx} />
-        ))}
-      </div>
-    </div>
+      ) : reports.length === 0 ? (
+        <EmptyState
+          title="Reports unavailable"
+          description="These analyses could not be loaded. Try running them again from the analysis page."
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {reports.map((report, idx) => (
+            <ReportSection key={report.requestId} report={report} idx={idx} />
+          ))}
+        </div>
+      )}
+    </PageShell>
   );
 }
 
-/**
- * Sub-component to manage memoized TradingView configs per report
- */
-function ReportSection({ report, idx }: { report: ComparisonReport, idx: number }) {
-  const symbolInfoConfig = (report.stock_symbol);
-  const technicalAnalysisConfig = (report.stock_symbol);
-
+/** One column of the comparison: live TradingView metrics above the AI verdict. */
+function ReportSection({ report, idx }: { report: ComparisonReport; idx: number }) {
   return (
-    <div className="space-y-8">
+    <div className="app-enter space-y-6" style={{ "--i": idx } as React.CSSProperties}>
       {/* 1. Live TradingView Metrics */}
-      <div className="space-y-4">
-         <div className="flex items-center gap-2 px-1">
-            <Zap className="w-3 h-3 text-amber-500" />
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-widest">Live Market Pulse</span>
-         </div>
-         <div className="bg-[#111111] border border-[#27272A] rounded-2xl p-1 overflow-hidden shadow-sm">
+      <div className="space-y-3">
+        <SectionHeader
+          as="h3"
+          title={
+            <span className="app-label flex items-center gap-2">
+              <Zap className="size-3 text-brand" />
+              Live Market Pulse
+            </span>
+          }
+        />
+        <Panel padding="none" className="overflow-hidden">
+          <TradingViewWidget
+            scriptUrl={TV_SYMBOL_INFO_URL}
+            config={SYMBOL_INFO_WIDGET_CONFIG(report.stock_symbol)}
+            height={160}
+          />
+          <div className="bg-surface-sunken p-4">
             <TradingViewWidget
-              scriptUrl={TV_SYMBOL_INFO_URL}
-              config={SYMBOL_INFO_WIDGET_CONFIG(report.stock_symbol)}
-              height={160}
+              scriptUrl={TV_TECHNICAL_ANALYSIS_URL}
+              config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(report.stock_symbol)}
+              height={380}
             />
-            <div className="p-4 bg-black/20">
-              <TradingViewWidget
-                scriptUrl={TV_TECHNICAL_ANALYSIS_URL}
-                config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(report.stock_symbol)}
-                height={380}
-              />
-            </div>
-         </div>
+          </div>
+        </Panel>
       </div>
 
       {/* 2. AI Strategic Report */}
-      <div className="space-y-4">
-         <div className="flex items-center gap-2 px-1">
-            <TrendingUp className="w-3 h-3 text-blue-500" />
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-widest">AI Strategic Verdict</span>
-         </div>
-         <Card className="bg-[#111111] border-[#27272A] rounded-2xl shadow-sm overflow-hidden group border">
-           <div className={cn(
-             "h-1 w-full",
-             idx === 0 ? "bg-blue-500" : "bg-blue-600"
-           )} />
-           <CardHeader className="pb-6">
-             <div className="flex items-center justify-between mb-4">
-               <Badge variant="outline" className="text-xs font-medium uppercase tracking-widest border-[#27272A] text-gray-400 bg-transparent">
-                 {report.stock_symbol} REPORT
-               </Badge>
-               <Badge className={cn(
-                 "text-xs font-semibold uppercase tracking-widest",
-                 report.investment_recommendation.includes("Buy") ? "bg-emerald-500/10 text-emerald-400" :
-                   report.investment_recommendation.includes("Sell") ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"
-               )}>
-                 {report.investment_recommendation}
-               </Badge>
-             </div>
-             <CardTitle className="text-2xl font-bold text-white group-hover:text-blue-400 transition-colors">
-               {report.company_name}
-             </CardTitle>
-             <div className="flex items-center gap-2 mt-4 pt-4 border-t border-[#27272A]">
-               <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                     <div key={s} className={cn(
-                       "w-1 h-3 rounded-full",
-                       (report.confidence_level / 20) >= s ? "bg-blue-500" : "bg-[#27272A]"
-                     )} />
-                   ))}
-               </div>
-               <span className="text-xs text-gray-500 font-medium uppercase tracking-tighter ml-1">AI Trust Index: {report.confidence_level}%</span>
-             </div>
-           </CardHeader>
-           <CardContent className="space-y-8 pb-10">
-             <div className="bg-[#1A1A1A] border border-[#27272A] p-5 rounded-xl">
-               <h3 className="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                 <CheckCircle2 className="w-3 h-3 text-emerald-500/60" /> Core Thesis
-               </h3>
-               <p className="text-sm text-gray-300 leading-relaxed italic">
-                 "{report.executive_summary}"
-               </p>
-             </div>
+      <div className="space-y-3">
+        <SectionHeader
+          as="h3"
+          title={
+            <span className="app-label flex items-center gap-2">
+              <TrendingUp className="size-3 text-brand" />
+              AI Strategic Verdict
+            </span>
+          }
+        />
+        <Panel padding="none" className="overflow-hidden">
+          <div className="space-y-4 p-4 sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <Badge tone="neutral" size="sm" uppercase>
+                {report.stock_symbol} Report
+              </Badge>
+              <Badge tone={recommendationTone(report.investment_recommendation)} size="sm" uppercase pill>
+                {report.investment_recommendation}
+              </Badge>
+            </div>
 
-             <div className="space-y-6">
-               <div className="space-y-3">
-                 <h4 className="text-xs font-medium text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                   <TrendingUp className="w-3 h-3" /> Technical Analysis
-                 </h4>
-                 <p className="text-sm text-gray-400 leading-relaxed font-normal">{report.quantitative_summary}</p>
-               </div>
-               <div className="space-y-3">
-                 <h4 className="text-xs font-medium text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                   Sentiment & News
-                 </h4>
-                 <p className="text-sm text-gray-400 leading-relaxed font-normal">{report.qualitative_summary}</p>
-               </div>
-             </div>
+            <h3 className="text-xl font-semibold tracking-tight text-ink">{report.company_name}</h3>
 
-             <div className="pt-6 border-t border-[#27272A]">
-               <h4 className="text-xs font-medium text-red-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                 <AlertTriangle className="w-3 h-3" /> Risk Profile
-               </h4>
-               <p className="text-sm text-gray-400 leading-relaxed bg-red-500/[0.03] p-4 rounded-xl border border-red-500/20">
-                 {report.risk_assessment}
-               </p>
-             </div>
-           </CardContent>
-         </Card>
-       </div>
+            <div className="flex items-center gap-2 border-t border-hairline pt-4">
+              <div className="flex items-center gap-1.5" aria-hidden>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <div
+                    key={s}
+                    className={cn(
+                      "h-3 w-1 rounded-full",
+                      report.confidence_level / 20 >= s ? "bg-brand" : "bg-surface-raised-2"
+                    )}
+                  />
+                ))}
+              </div>
+              <span className="app-label ml-1 tnum">
+                AI Trust Index: {report.confidence_level}%
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-6 border-t border-hairline p-4 sm:p-6">
+            <Surface level="raised-2" radius="tile" padding="sm">
+              <h4 className="app-label mb-2 flex items-center gap-2">
+                <CheckCircle2 className="size-3 text-positive" /> Core Thesis
+              </h4>
+              <p className="text-sm italic leading-relaxed text-ink-secondary">
+                &ldquo;{report.executive_summary}&rdquo;
+              </p>
+            </Surface>
+
+            <div className="space-y-3">
+              <h4 className="app-label flex items-center gap-2">
+                <TrendingUp className="size-3" /> Technical Analysis
+              </h4>
+              <p className="text-sm leading-relaxed text-ink-secondary">
+                {report.quantitative_summary}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="app-label">Sentiment &amp; News</h4>
+              <p className="text-sm leading-relaxed text-ink-secondary">
+                {report.qualitative_summary}
+              </p>
+            </div>
+
+            <div className="border-t border-hairline pt-6">
+              <h4 className="app-label mb-3 flex items-center gap-2 text-negative">
+                <AlertTriangle className="size-3" /> Risk Profile
+              </h4>
+              <p className="rounded-lg border border-negative/20 bg-negative/5 p-4 text-sm leading-relaxed text-ink-secondary">
+                {report.risk_assessment}
+              </p>
+            </div>
+          </div>
+        </Panel>
+      </div>
     </div>
   );
 }

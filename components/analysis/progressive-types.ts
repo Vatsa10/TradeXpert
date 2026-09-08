@@ -1,5 +1,9 @@
 import type { InstantPanel } from "@/lib/analysis/instant-panel";
 import type { QuantitativeAnalysis, QualitativeAnalysis } from "@/lib/analysis/types";
+import {
+  formatCompactMoney as systemFormatCompactMoney,
+  formatMoney as systemFormatMoney,
+} from "@/components/system";
 
 /**
  * View models for the progressive analysis UI.
@@ -39,21 +43,16 @@ const num = (value: unknown): number | undefined =>
 
 export const isIndianSymbol = (symbol?: string) => !!symbol && /\.(NS|BO)$/i.test(symbol.trim());
 
-export const formatMoney = (value: number | undefined, currency: "INR" | "USD") => {
-  if (!Number.isFinite(value as number)) return "—";
-  const v = value as number;
-  return `${currency === "INR" ? "₹" : "$"}${v.toLocaleString(currency === "INR" ? "en-IN" : "en-US", {
-    maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2,
-  })}`;
-};
+/**
+ * Currency + compact helpers. These now delegate to the design-system
+ * formatters so the analysis surface prints figures identically to every other
+ * page (em dash for missing, en-IN grouping and the K/L/Cr ladder for INR).
+ */
+export const formatMoney = (value: number | undefined, currency: "INR" | "USD") =>
+  systemFormatMoney(value, currency);
 
-export const formatCompact = (value: number | undefined, currency: "INR" | "USD") => {
-  if (!Number.isFinite(value as number)) return "—";
-  return `${currency === "INR" ? "₹" : "$"}${(value as number).toLocaleString("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  })}`;
-};
+export const formatCompact = (value: number | undefined, currency: "INR" | "USD") =>
+  systemFormatCompactMoney(value, currency);
 
 const toneForSignal = (signal?: string | null): InstantIndicator["tone"] =>
   signal === "bullish" ? "positive" : signal === "bearish" ? "negative" : "neutral";
