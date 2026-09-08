@@ -28,7 +28,13 @@ export async function getAllUsersForNewsEmail() {
       .toArray();
 
     const deliverable = users.filter(
-      (user) => user.email && user.name && !isUndeliverableEmail(user.email)
+      (user) =>
+        user.email &&
+        user.name &&
+        !isUndeliverableEmail(user.email) &&
+        // Opt-out is honoured here rather than at send time so an unsubscribed
+        // address is never even queued.
+        user.newsEmailOptOut !== true
     );
 
     const skipped = users.length - deliverable.length;
