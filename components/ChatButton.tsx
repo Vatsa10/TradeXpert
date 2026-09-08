@@ -1,59 +1,44 @@
-
 "use client";
 
 import Link from "next/link";
-import { MessageCircle, Zap, Brain, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Brain, MessageCircle, Sparkles, Zap } from "lucide-react";
 
+import { Badge } from "@/components/system";
+
+/** Floating entry point to /chat. One accent: amber. */
 export function ChatButton() {
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
-      <Link href="/chat">
-        <Button
-          size="icon-lg"
-          className="h-14 w-14 rounded-full shadow-lg bg-primary hover:bg-primary/90 transition-all duration-300 hover:scale-110"
-        >
-          <MessageCircle className="h-6 w-6" />
-        </Button>
+    <div className="fixed right-6 bottom-6 z-50">
+      <Link
+        href="/chat"
+        aria-label="Open TradeXpert AI chat"
+        className="app-press app-focus app-shadow-2 flex size-14 items-center justify-center rounded-full bg-brand text-brand-ink motion-safe:transition-colors motion-safe:duration-200 motion-safe:ease-out-strong [@media(hover:hover)]:hover:bg-brand-hover"
+      >
+        <MessageCircle className="size-6" aria-hidden />
       </Link>
     </div>
   );
 }
 
-export function ChatModeIndicator({ mode }: { mode: string }) {
-  const getModeConfig = () => {
-    switch (mode) {
-      case "pro":
-        return {
-          icon: Sparkles,
-          label: "Pro",
-          color: "bg-purple-500",
-        };
-      case "thinking":
-        return {
-          icon: Brain,
-          label: "Thinking",
-          color: "bg-blue-500",
-        };
-      default:
-        return {
-          icon: Zap,
-          label: "Normal",
-          color: "bg-green-500",
-        };
-    }
-  };
+const MODE_CONFIG = {
+  pro: { icon: Sparkles, label: "Pro" },
+  thinking: { icon: Brain, label: "Thinking" },
+  normal: { icon: Zap, label: "Normal" },
+} as const;
 
-  const config = getModeConfig();
+/** Which mode produced a message. Neutral chip — mode is not a judgement. */
+export function ChatModeIndicator({ mode }: { mode: string }) {
+  const config =
+    mode === "pro" || mode === "thinking"
+      ? MODE_CONFIG[mode]
+      : MODE_CONFIG.normal;
   const Icon = config.icon;
 
   return (
-    <div
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.color} text-white`}
-    >
-      <Icon className="h-3 w-3" />
+    <Badge tone="neutral" pill>
+      <Icon className="size-3" aria-hidden />
       <span>{config.label}</span>
-    </div>
+    </Badge>
   );
 }
 

@@ -1,42 +1,22 @@
-
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Sparkles, Brain, Zap, Loader2, Trash2, MessageSquare, AlertTriangle, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChatModeIndicator } from "@/components/ChatButton";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot } from "lucide-react";
 
-type Mode = "normal" | "thinking" | "pro";
+import { Surface } from "@/components/system";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  mode?: Mode;
-  sources?: string[];
-}
-
-interface Session {
-  sessionId: string;
-  title: string;
-  mode: Mode;
-  preview?: string;
-  createdAt: string;
-}
-
-interface Quota {
-  standardCount: number;
-  proCount: number;
-  standardLimit: number;
-  proLimit: number;
-}
-
-interface Notice {
-  kind: "quota" | "network";
-  message: string;
-}
+import { ChatComposer } from "./ChatComposer";
+import { ChatMessageList } from "./ChatMessageList";
+import { ChatModeSelector } from "./ChatModeSelector";
+import { ChatSessionSidebar } from "./ChatSessionSidebar";
+import {
+  MODE_COPY,
+  type Message,
+  type Mode,
+  type Notice,
+  type Quota,
+  type Session,
+} from "./chat-types";
 
 export default function ChatPageClient() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -45,6 +25,7 @@ export default function ChatPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionsStatus, setSessionsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [notice, setNotice] = useState<Notice | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,27 +36,31 @@ export default function ChatPageClient() {
         messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
       }
     };
-    
-    // Use requestAnimationFrame or a small timeout to ensure the DOM has updated
+
+    // Small timeout so the DOM has updated before we scroll.
     const timeoutId = setTimeout(scrollToBottom, 50);
     return () => clearTimeout(timeoutId);
   }, [messages, isLoading]);
 
-  useEffect(() => {
-    fetchSessions();
-  }, []);
-
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
     try {
       const res = await fetch("/api/chat");
       const data = await res.json();
       if (data.sessions) {
         setSessions(data.sessions);
+        setSessionsStatus("ready");
+      } else {
+        setSessionsStatus("error");
       }
     } catch (error) {
       console.error("Failed to fetch sessions:", error);
+      setSessionsStatus("error");
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
 
   const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
@@ -151,6 +136,9 @@ export default function ChatPageClient() {
           content: data.response,
           mode: data.mode,
           sources: data.sources,
+          llmResponse: data.llmResponse,
+          signals: data.signals,
+          sentiment: data.sentiment,
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
@@ -171,9 +159,9 @@ export default function ChatPageClient() {
     }
   };
 
-  const loadSession = async (sessionId: string) => {
+  const loadSession = async (nextSessionId: string) => {
     try {
-      const res = await fetch(`/api/chat?sessionId=${sessionId}`);
+      const res = await fetch(`/api/chat?sessionId=${nextSessionId}`);
       const data = await res.json();
       if (data.messages) {
         setMessages(
@@ -184,7 +172,7 @@ export default function ChatPageClient() {
             sources: m.sources,
           }))
         );
-        setSessionId(sessionId);
+        setSessionId(nextSessionId);
         setMode(data.mode || "normal");
       }
     } catch (error) {
@@ -205,283 +193,83 @@ export default function ChatPageClient() {
     fetchSessions();
   };
 
-  const getModeIcon = (m: Mode) => {
-    switch (m) {
-      case "pro":
-        return Sparkles;
-      case "thinking":
-        return Brain;
-      default:
-        return Zap;
+  const deleteSession = async (targetId: string) => {
+    try {
+      await fetch(`/api/chat?sessionId=${targetId}`, { method: "DELETE" });
+      fetchSessions();
+      if (sessionId === targetId) {
+        setMessages([]);
+        setSessionId(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete chat:", error);
     }
   };
 
+  const sidebar = (
+    <ChatSessionSidebar
+      sessions={sessions}
+      activeSessionId={sessionId}
+      status={sessionsStatus}
+      onSelect={loadSession}
+      onDelete={deleteSession}
+      onClearCurrent={clearChat}
+      onRetry={() => {
+        setSessionsStatus("loading");
+        fetchSessions();
+      }}
+    />
+  );
+
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-6">
-      <div className="w-64 shrink-0 hidden md:block">
-        <Card className="h-full p-4 bg-zinc-900 border-zinc-800">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-white">History</h3>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={clearChat}
-              className="text-zinc-400 hover:text-white"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-          <ScrollArea className="h-[calc(100%-2rem)]">
-            <div className="space-y-2">
-              {sessions.length === 0 ? (
-                <p className="text-zinc-500 text-sm">No conversations yet</p>
-              ) : (
-                sessions.map((s) => (
-                  <div key={s.sessionId} className="flex items-center group">
-                    <button
-                      onClick={() => loadSession(s.sessionId)}
-                      className={`flex-1 text-left p-2 rounded-lg transition-colors ${
-                        sessionId === s.sessionId
-                          ? "bg-zinc-800 text-white"
-                          : "hover:bg-zinc-800/50 text-zinc-400 hover:text-white"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4 shrink-0" />
-                        <span className="text-sm truncate">{s.title}</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          await fetch(`/api/chat?sessionId=${s.sessionId}`, { method: "DELETE" });
-                          fetchSessions();
-                          if (sessionId === s.sessionId) {
-                            setMessages([]);
-                            setSessionId(null);
-                          }
-                        } catch (error) {
-                          console.error("Failed to delete chat:", error);
-                        }
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </Card>
-      </div>
+    <div className="flex h-[calc(100vh-8rem)] min-h-0 gap-6">
+      <Surface as="aside" padding="md" className="hidden w-64 shrink-0 md:block">
+        {sidebar}
+      </Surface>
 
-      <div className="flex-1 flex flex-col min-h-0">
-        <Card className="flex-1 flex flex-col bg-zinc-900 border-zinc-800 overflow-hidden min-h-0 p-0 shadow-none">
-          <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Bot className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-white">TradeXpert AI</h2>
-                <p className="text-xs text-zinc-400">
-                  {mode === "pro"
-                    ? "Deep Analysis Mode"
-                    : mode === "thinking"
-                    ? "Market Reasoning Mode"
-                    : "Quick Answers"}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <ModeButton
-                mode="normal"
-                currentMode={mode}
-                onClick={() => setMode("normal")}
-                icon={Zap}
-                label="Normal"
-              />
-              <ModeButton
-                mode="thinking"
-                currentMode={mode}
-                onClick={() => setMode("thinking")}
-                icon={Brain}
-                label="Think"
-              />
-              <ModeButton
-                mode="pro"
-                currentMode={mode}
-                onClick={() => setMode("pro")}
-                icon={Sparkles}
-                label="Pro"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-1 flex-col overflow-y-auto p-4 min-h-0 custom-scrollbar scroll-smooth">
-            <div className="space-y-4">
-              {messages.length === 0 && (
-                <div className="text-center py-12">
-                  <Bot className="h-12 w-12 mx-auto mb-4 text-zinc-600" />
-                  <h3 className="text-lg font-medium text-white mb-2">
-                    Welcome to TradeXpert AI
-                  </h3>
-                  <p className="text-zinc-400 max-w-md mx-auto">
-                    Ask me about stocks, markets, or investment ideas. Use{" "}
-                    <span className="text-blue-400">Think</span> for market
-                    analysis or{" "}
-                    <span className="text-purple-400">Pro</span> for deep
-                    research.
-                  </p>
-                </div>
-              )}
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex gap-3 ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {message.role === "assistant" && (
-                    <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                      <Bot className="h-4 w-4 text-primary" />
-                    </div>
-                  )}
-                  <div
-                    className={`max-w-[70%] rounded-lg p-3 ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-zinc-800 text-white"
-                    }`}
-                  >
-                    {message.mode && (
-                      <div className="mb-2">
-                        <ChatModeIndicator mode={message.mode} />
-                      </div>
-                    )}
-                    <div className="whitespace-pre-wrap text-sm">
-                      {message.content}
-                    </div>
-                    {message.sources && message.sources.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-zinc-700 text-xs text-zinc-400">
-                        Sources: {message.sources.join(", ")}
-                      </div>
-                    )}
-                  </div>
-                  {message.role === "user" && (
-                    <div className="h-8 w-8 rounded-full bg-zinc-700 flex items-center justify-center shrink-0">
-                      <User className="h-4 w-4 text-white" />
-                    </div>
-                  )}
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex gap-3">
-                  <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="bg-zinc-800 rounded-lg p-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} className="h-4" />
-            </div>
-          </div>
-
-          <div className="p-4 border-t border-zinc-800">
-            {notice && (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Surface padding="none" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline p-4">
+            <div className="flex min-w-0 items-center gap-3">
               <div
-                role="status"
-                className={`mb-3 flex items-start gap-2 rounded-lg border p-3 text-sm ${
-                  notice.kind === "quota"
-                    ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
-                    : "bg-red-500/10 border-red-500/40 text-red-300"
-                }`}
+                aria-hidden
+                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-brand/30 bg-brand/10 text-brand"
               >
-                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span className="flex-1">{notice.message}</span>
-                {notice.kind === "network" && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleSubmit(e)}
-                    disabled={isLoading || !input.trim()}
-                    className="shrink-0 underline underline-offset-2 hover:text-white disabled:opacity-50"
-                  >
-                    Retry
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setNotice(null)}
-                  className="shrink-0 text-zinc-500 hover:text-white"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <Bot className="size-5" />
               </div>
-            )}
-            <form onSubmit={handleSubmit} className="flex gap-2">
-              <Input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  mode === "pro"
-                    ? "Ask for deep analysis..."
-                    : mode === "thinking"
-                    ? "Ask about a stock..."
-                    : "Ask anything..."
-                }
-                className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                disabled={isLoading}
-              />
-              <Button type="submit" disabled={isLoading || !input.trim()}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </form>
-          </div>
-        </Card>
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-semibold text-ink">TradeXpert AI</h1>
+                <p className="truncate text-xs text-ink-secondary">{MODE_COPY[mode].caption}</p>
+              </div>
+            </div>
+            <ChatModeSelector mode={mode} onChange={setMode} disabled={isLoading} />
+          </header>
+
+          <details className="border-b border-hairline md:hidden">
+            <summary className="app-focus app-press cursor-pointer list-none px-4 py-2 text-xs font-medium text-ink-secondary">
+              History ({sessions.length})
+            </summary>
+            <div className="max-h-64 px-4 pb-4">{sidebar}</div>
+          </details>
+
+          <ChatMessageList
+            messages={messages}
+            isLoading={isLoading}
+            endRef={messagesEndRef}
+          />
+
+          <ChatComposer
+            input={input}
+            onInputChange={setInput}
+            onSubmit={handleSubmit}
+            onDismissNotice={() => setNotice(null)}
+            mode={mode}
+            isLoading={isLoading}
+            notice={notice}
+            inputRef={inputRef}
+          />
+        </Surface>
       </div>
     </div>
-  );
-}
-
-function ModeButton({
-  mode,
-  currentMode,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  mode: Mode;
-  currentMode: Mode;
-  onClick: () => void;
-  icon: React.ElementType;
-  label: string;
-}) {
-  const isActive = currentMode === mode;
-  const colors = {
-    normal: "bg-green-500/20 text-green-400 border-green-500/50",
-    thinking: "bg-blue-500/20 text-blue-400 border-blue-500/50",
-    pro: "bg-purple-500/20 text-purple-400 border-purple-500/50",
-  };
-
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onClick}
-      className={`gap-1.5 ${
-        isActive
-          ? colors[mode]
-          : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      <span className="text-xs">{label}</span>
-    </Button>
   );
 }
