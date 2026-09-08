@@ -248,7 +248,7 @@ export function LineChart({
 
         {hover !== null && (
           <div
-            className="pointer-events-none absolute top-2 z-10 min-w-[130px] rounded-md border border-zinc-700 bg-[#18181B] px-3 py-2 text-xs shadow-xl"
+            className="pointer-events-none absolute top-2 z-10 min-w-[130px] rounded-md border border-hairline-strong bg-surface-overlay px-3 py-2 text-xs app-shadow-3"
             style={{
               left: hoverX,
               transform: flip ? "translateX(calc(-100% - 10px))" : "translateX(10px)",

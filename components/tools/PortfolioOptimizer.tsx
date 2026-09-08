@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ActionButton } from "@/components/app/ActionButton";
 import {
   Select,
   SelectContent,
@@ -13,18 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
-
-import { CHART_COLORS, ChartSeries, DonutChart, LineChart } from "./charts";
 import {
+  CHART_COLORS,
   EmptyState,
   ErrorState,
+  LineChart,
   Panel,
+  SectionHeader,
   Skeleton,
-  StatCard,
-  formatNum,
-  formatPct,
-} from "./shared";
+  StatGrid,
+  type ChartSeries,
+} from "@/components/system";
+import { AllocationBreakdown } from "@/components/tools/portfolio/AllocationBreakdown";
+import { CorrelationMatrix } from "@/components/tools/portfolio/CorrelationMatrix";
+import { RiskMetrics, type PortfolioMetrics } from "@/components/tools/portfolio/RiskMetrics";
+import { MAX_SYMBOLS, SymbolPicker } from "@/components/tools/portfolio/SymbolPicker";
+import { cn } from "@/lib/utils";
 
 const METHODS = [
   { value: "hrp", label: "Hierarchical Risk Parity" },
@@ -33,19 +36,6 @@ const METHODS = [
 ] as const;
 
 type Method = (typeof METHODS)[number]["value"];
-
-interface PortfolioMetrics {
-  annualReturn: number;
-  annualVolatility: number;
-  sharpeRatio: number;
-  sortinoRatio: number;
-  calmarRatio: number;
-  maxDrawdown: number;
-  var95: number;
-  cvar95: number;
-  skewness: number;
-  kurtosis: number;
-}
 
 interface OptimizeResponse {
   weights: Record<string, number>;
@@ -58,16 +48,8 @@ interface OptimizeResponse {
   assetCumulative: Record<string, number[]>;
 }
 
-const MAX_SYMBOLS = 10;
-
-/** Diverging fill: red for co-movement, teal for hedging, transparent near zero. */
-function correlationFill(value: number) {
-  if (!Number.isFinite(value)) return "transparent";
-  const magnitude = Math.min(1, Math.abs(value)) * 0.6;
-  return value >= 0
-    ? `rgba(239, 68, 68, ${magnitude})`
-    : `rgba(45, 212, 191, ${magnitude})`;
-}
+/** Brand amber for the portfolio line — the single accent in the app. */
+const PORTFOLIO_COLOR = "#E8BA40";
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -155,18 +137,6 @@ export default function PortfolioOptimizer() {
     setDraft("");
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" || event.key === ",") {
-      // Enter would submit; comma is a separator, not a character we want typed.
-      event.preventDefault();
-      if (draft.trim()) addSymbols(draft);
-      return;
-    }
-    if (event.key === "Backspace" && draft === "") {
-      setSymbols((prev) => prev.slice(0, -1));
-    }
-  };
-
   const canRun = symbols.length >= 2 && !loading;
 
   const weightRows = data
@@ -192,7 +162,7 @@ export default function PortfolioOptimizer() {
         {
           name: "Portfolio",
           values: data.portfolioCumulative ?? [],
-          color: "#eab308",
+          color: PORTFOLIO_COLOR,
         },
       ]
     : [];
@@ -205,194 +175,97 @@ export default function PortfolioOptimizer() {
       description="Allocate weights across your holdings and stress-test the resulting risk profile."
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="flex-1">
-          <div className="flex min-h-12 flex-wrap items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-2 py-2 focus-within:border-yellow-500">
-            {symbols.map((symbol) => (
-              <span
-                key={symbol}
-                className="flex items-center gap-1 rounded-md bg-zinc-700 py-1 pr-1 pl-2.5 text-sm font-medium text-gray-100"
-              >
-                {symbol}
-                <button
-                  type="button"
-                  aria-label={`Remove ${symbol}`}
-                  onClick={() => setSymbols((prev) => prev.filter((s) => s !== symbol))}
-                  className="cursor-pointer rounded p-0.5 text-gray-400 hover:bg-zinc-600 hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            ))}
-            <Input
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={() => draft.trim() && addSymbols(draft)}
-              placeholder={symbols.length ? "Add symbol…" : "AAPL, MSFT, NVDA…"}
-              aria-label="Add portfolio symbols"
-              className="h-8 min-w-[140px] flex-1 border-0 bg-transparent px-1 text-base text-white shadow-none placeholder:text-gray-500 focus-visible:ring-0"
-            />
-          </div>
-          <p className="mt-1.5 text-xs text-gray-500">
-            Press Enter to add. 2–{MAX_SYMBOLS} symbols. Leave empty to use your watchlist.
-          </p>
-        </div>
+        <SymbolPicker
+          symbols={symbols}
+          draft={draft}
+          setDraft={setDraft}
+          onAdd={addSymbols}
+          onRemove={(symbol) => setSymbols((prev) => prev.filter((s) => s !== symbol))}
+        />
 
         <div className="flex flex-col gap-3 sm:flex-row lg:shrink-0">
           <Select value={method} onValueChange={(value) => setMethod(value as Method)}>
             <SelectTrigger
-              className="!h-12 w-full border-gray-600 bg-gray-800 text-gray-200 sm:w-[230px]"
+              className="!h-12 w-full border-hairline-strong bg-surface-sunken text-ink sm:w-[230px]"
               aria-label="Optimization method"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="border-gray-600 bg-gray-800 text-gray-200">
+            <SelectContent className="border-hairline bg-surface-overlay text-ink">
               {METHODS.map((item) => (
-                <SelectItem key={item.value} value={item.value} className="select-item">
+                <SelectItem key={item.value} value={item.value}>
                   {item.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          <Button
+          <ActionButton
+            variant="brand"
             onClick={() => run(symbols, method, true)}
             disabled={!canRun}
-            className="yellow-btn !h-12 px-6 sm:w-auto"
+            loading={loading}
+            className="!h-12 px-6 sm:w-auto"
           >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
+            {!loading && <RefreshCw aria-hidden />}
             Optimize
-          </Button>
+          </ActionButton>
         </div>
       </div>
 
       <div className="mt-6 space-y-6">
-        {error && (
-          <ErrorState message={error} onRetry={() => run(symbols, method, true)} />
-        )}
+        {error && <ErrorState message={error} onRetry={() => run(symbols, method, true)} />}
 
         {loading && !data && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="space-y-4" aria-busy="true">
+            <StatGrid columns={6}>
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-[86px]" />
               ))}
-            </div>
+            </StatGrid>
             <Skeleton className="h-[300px]" />
           </div>
         )}
 
         {!loading && !error && !data && (
-          <EmptyState>
-            Add at least two symbols above — or build a watchlist — then run the optimizer.
-          </EmptyState>
+          <EmptyState
+            title="Nothing to optimize yet"
+            description="Add at least two symbols above — or build a watchlist — then run the optimizer."
+          />
         )}
 
         {data && (
           <>
-            {metrics && (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-                <StatCard
-                  label="Sharpe"
-                  value={formatNum(metrics.sharpeRatio)}
-                  tone={metrics.sharpeRatio >= 1 ? "positive" : "neutral"}
-                  hint="Return per unit of risk"
-                />
-                <StatCard
-                  label="Sortino"
-                  value={formatNum(metrics.sortinoRatio)}
-                  tone={metrics.sortinoRatio >= 1 ? "positive" : "neutral"}
-                  hint="Downside-adjusted"
-                />
-                <StatCard
-                  label="Calmar"
-                  value={formatNum(metrics.calmarRatio)}
-                  hint="Return vs. max drawdown"
-                />
-                <StatCard
-                  label="Max Drawdown"
-                  value={formatPct(metrics.maxDrawdown)}
-                  tone="negative"
-                  hint="Worst peak-to-trough"
-                />
-                <StatCard
-                  label="VaR 95%"
-                  value={formatPct(metrics.var95)}
-                  tone="negative"
-                  hint="Daily loss, 1-in-20"
-                />
-                <StatCard
-                  label="CVaR 95%"
-                  value={formatPct(metrics.cvar95)}
-                  tone="negative"
-                  hint="Avg loss beyond VaR"
-                />
-              </div>
-            )}
+            {metrics && <RiskMetrics metrics={metrics} />}
 
             <div className="grid gap-6 lg:grid-cols-5">
               <div className="lg:col-span-2">
-                <h3 className="mb-3 text-sm font-semibold text-gray-300">Allocation</h3>
-                <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
-                  <DonutChart
-                    size={180}
-                    slices={weightRows.map((row) => ({
-                      label: `${row.symbol} · ${formatPct(row.weight, 1)}`,
-                      value: row.weight,
-                      color: row.color,
-                    }))}
-                  />
-                  <div className="w-full space-y-2">
-                    {weightRows.map((row) => (
-                      <div key={row.symbol} className="text-sm">
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-2 font-medium text-gray-200">
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: row.color }}
-                            />
-                            {row.symbol}
-                          </span>
-                          <span className="tabular-nums text-gray-400">
-                            {formatPct(row.weight, 1)}
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                          <div
-                            className="h-full rounded-full"
-                            style={{
-                              width: `${Math.max(0, Math.min(1, row.weight)) * 100}%`,
-                              backgroundColor: row.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <AllocationBreakdown rows={weightRows} />
               </div>
 
               <div className="lg:col-span-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-gray-300">Growth of $1</h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowAssets((prev) => !prev)}
-                    className={cn(
-                      "cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                      showAssets
-                        ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-500"
-                        : "border-zinc-700 text-gray-400 hover:text-gray-200"
-                    )}
-                  >
-                    <Plus className="mr-1 inline h-3 w-3" />
-                    Individual assets
-                  </button>
-                </div>
+                <SectionHeader
+                  as="h3"
+                  title="Growth of $1"
+                  className="mb-3"
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => setShowAssets((prev) => !prev)}
+                      aria-pressed={showAssets}
+                      className={cn(
+                        "app-press app-focus cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium",
+                        "transition-colors duration-200",
+                        showAssets
+                          ? "border-brand/40 bg-brand/10 text-brand"
+                          : "border-hairline-strong text-ink-secondary [@media(hover:hover)]:hover:text-ink"
+                      )}
+                    >
+                      <Plus className="mr-1 inline size-3" aria-hidden />
+                      Individual assets
+                    </button>
+                  }
+                />
                 <LineChart
                   series={chartSeries}
                   labels={data.dates}
@@ -403,52 +276,7 @@ export default function PortfolioOptimizer() {
               </div>
             </div>
 
-            {data.correlationMatrix?.length > 0 && (
-              <div>
-                <h3 className="mb-3 text-sm font-semibold text-gray-300">
-                  Correlation Matrix
-                  <span className="ml-2 font-normal text-gray-500">
-                    red = moves together, teal = hedges
-                  </span>
-                </h3>
-                <div className="horizontal-scroll overflow-x-auto">
-                  <table className="w-full min-w-[420px] border-separate border-spacing-0.5 text-xs">
-                    <thead>
-                      <tr>
-                        <th className="sticky left-0 z-10 bg-[#111111] px-2 py-1.5 text-left font-medium text-gray-500" />
-                        {data.symbols.map((symbol) => (
-                          <th
-                            key={symbol}
-                            className="px-2 py-1.5 text-center font-medium text-gray-400"
-                          >
-                            {symbol}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.correlationMatrix.map((row, i) => (
-                        <tr key={data.symbols[i] ?? i}>
-                          <th className="sticky left-0 z-10 bg-[#111111] px-2 py-1.5 text-left font-medium text-gray-400 whitespace-nowrap">
-                            {data.symbols[i]}
-                          </th>
-                          {row.map((value, j) => (
-                            <td
-                              key={j}
-                              className="rounded px-2 py-1.5 text-center tabular-nums text-gray-200"
-                              style={{ backgroundColor: correlationFill(value) }}
-                              title={`${data.symbols[i]} / ${data.symbols[j]}: ${formatNum(value)}`}
-                            >
-                              {formatNum(value)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            <CorrelationMatrix symbols={data.symbols ?? []} matrix={data.correlationMatrix} />
           </>
         )}
       </div>

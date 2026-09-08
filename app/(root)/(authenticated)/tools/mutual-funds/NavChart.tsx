@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 
+import { formatMoney } from "@/components/system";
+
 export interface NavPoint {
   date: string; // DD-MM-YYYY
   nav: number;
@@ -13,7 +15,7 @@ const PAD_X = 48;
 const PAD_Y = 20;
 
 function formatNav(nav: number) {
-  return `₹${nav.toFixed(2)}`;
+  return formatMoney(nav, "INR", 2);
 }
 
 /**
@@ -54,7 +56,7 @@ export default function NavChart({ points }: { points: NavPoint[] }) {
 
   if (points.length === 0) {
     return (
-      <div className="px-6 py-16 text-center text-sm text-gray-400">
+      <div className="px-6 py-16 text-center text-sm text-ink-secondary">
         No NAV history available for this scheme.
       </div>
     );
@@ -86,8 +88,8 @@ export default function NavChart({ points }: { points: NavPoint[] }) {
       >
         <defs>
           <linearGradient id="navFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--app-brand)" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="var(--app-brand)" stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -100,7 +102,7 @@ export default function NavChart({ points }: { points: NavPoint[] }) {
               x2={WIDTH - PAD_X}
               y1={y}
               y2={y}
-              stroke="#27272A"
+              stroke="var(--app-hairline)"
               strokeWidth={1}
             />
           );
@@ -110,7 +112,7 @@ export default function NavChart({ points }: { points: NavPoint[] }) {
         <path
           d={path}
           fill="none"
-          stroke="#3b82f6"
+          stroke="var(--app-brand)"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
@@ -124,22 +126,22 @@ export default function NavChart({ points }: { points: NavPoint[] }) {
               x2={xFor(hoverIndex)}
               y1={PAD_Y}
               y2={HEIGHT - PAD_Y}
-              stroke="#52525B"
+              stroke="var(--app-hairline-strong)"
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
             />
-            <circle cx={xFor(hoverIndex)} cy={yFor(hovered.nav)} r={4} fill="#3b82f6" />
+            <circle cx={xFor(hoverIndex)} cy={yFor(hovered.nav)} r={4} fill="var(--app-brand)" />
           </>
         )}
       </svg>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-3 text-xs text-gray-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-3 text-xs text-ink-faint">
         <span>{points[0].date}</span>
 
-        <span className="text-gray-300">
+        <span className="text-ink">
           {hovered ? (
             <>
-              {hovered.date} · <span className="text-blue-400">{formatNav(hovered.nav)}</span>
+              {hovered.date} · <span className="text-brand">{formatNav(hovered.nav)}</span>
             </>
           ) : (
             <>

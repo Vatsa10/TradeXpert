@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import MonteCarloSimulator from "@/components/tools/MonteCarloSimulator";
 import PortfolioOptimizer from "@/components/tools/PortfolioOptimizer";
+import { PageShell } from "@/components/system";
 import { auth } from "@/lib/better-auth/auth";
 
 export const metadata = {
@@ -17,17 +18,14 @@ export default async function PortfolioLabPage() {
   if (!session?.user) redirect("/sign-in");
 
   return (
-    <div className="space-y-6 sm:space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold text-gray-100 sm:text-3xl">Portfolio Lab</h1>
-        <p className="mt-2 max-w-2xl text-sm text-gray-500 sm:text-base">
-          Size your allocations with risk-parity and mean-variance models, then pressure-test
-          your trading edge across thousands of simulated sequences.
-        </p>
-      </header>
-
+    <PageShell
+      width="wide"
+      eyebrow="Tools"
+      title="Portfolio Lab"
+      description="Size your allocations with risk-parity and mean-variance models, then pressure-test your trading edge across thousands of simulated sequences."
+    >
       <PortfolioOptimizer />
       <MonteCarloSimulator />
-    </div>
+    </PageShell>
   );
 }
