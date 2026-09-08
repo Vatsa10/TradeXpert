@@ -1,5 +1,6 @@
 import KiteConnectButton from "@/components/KiteConnectButton";
-import TradingViewWidget from "@/components/TradingViewWidget";
+import { WidgetPanel } from "@/components/dashboard/WidgetPanel";
+import { PageShell } from "@/components/system";
 import {
   HEATMAP_WIDGET_CONFIG,
   MARKET_DATA_WIDGET_CONFIG,
@@ -7,53 +8,64 @@ import {
   TOP_STORIES_WIDGET_CONFIG,
 } from "@/lib/constants";
 
+const SCRIPT_BASE =
+  "https://s3.tradingview.com/external-embedding/embed-widget-";
+
 export default async function DashboardPage() {
-  const scriptUrl = `https://s3.tradingview.com/external-embedding/embed-widget-`;
-
   return (
-    <div className="flex flex-col home-wrapper">
-      <div className="mb-6 flex justify-end">
-        <KiteConnectButton />
-      </div>
+    <PageShell
+      width="wide"
+      eyebrow="Markets"
+      title="Market workspace"
+      description="Indices, sector breadth, headlines and live quotes — one screen, refreshed by the exchange feed."
+      actions={<KiteConnectButton />}
+    >
+      {/* Row 1 — where the market stands: indices beside sector breadth. */}
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <WidgetPanel
+          index={0}
+          title="Market Overview"
+          description="Indices, futures and rates"
+          scriptUrl={`${SCRIPT_BASE}market-overview.js`}
+          config={MARKET_OVERVIEW_WIDGET_CONFIG}
+          widgetClassName="custom-chart"
+          height={600}
+          className="xl:col-span-1"
+        />
 
-      <section className="grid w-full gap-8 home-section mb-10">
-        <div className="md:col-span-1 xl:col-span-1">
-          <TradingViewWidget
-            title="Market Overview"
-            scriptUrl={`${scriptUrl}market-overview.js`}
-            config={MARKET_OVERVIEW_WIDGET_CONFIG}
-            className="custom-chart"
-            height={600}
-          />
-        </div>
-
-        <div className="md:col-span xl:col-span-2">
-          <TradingViewWidget
-            title="Stock Heatmap"
-            scriptUrl={`${scriptUrl}stock-heatmap.js`}
-            config={HEATMAP_WIDGET_CONFIG}
-            height={600}
-          />
-        </div>
+        <WidgetPanel
+          index={1}
+          title="Stock Heatmap"
+          description="Breadth by sector and market cap"
+          scriptUrl={`${SCRIPT_BASE}stock-heatmap.js`}
+          config={HEATMAP_WIDGET_CONFIG}
+          height={600}
+          className="xl:col-span-2"
+        />
       </section>
 
-      <section className="grid w-full gap-8 home-section">
-        <div className="h-full md:col-span-1 xl:col-span-1">
-          <TradingViewWidget
-            scriptUrl={`${scriptUrl}timeline.js`}
-            config={TOP_STORIES_WIDGET_CONFIG}
-            height={600}
-          />
-        </div>
+      {/* Row 2 — why it moved: the tape beside the wire. */}
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <WidgetPanel
+          index={2}
+          title="Top Stories"
+          description="Latest market headlines"
+          scriptUrl={`${SCRIPT_BASE}timeline.js`}
+          config={TOP_STORIES_WIDGET_CONFIG}
+          height={600}
+          className="xl:col-span-1"
+        />
 
-        <div className="h-full md:col-span-1 xl:col-span-2">
-          <TradingViewWidget
-            scriptUrl={`${scriptUrl}market-quotes.js`}
-            config={MARKET_DATA_WIDGET_CONFIG}
-            height={600}
-          />
-        </div>
+        <WidgetPanel
+          index={3}
+          title="Live Quotes"
+          description="Actives across the major boards"
+          scriptUrl={`${SCRIPT_BASE}market-quotes.js`}
+          config={MARKET_DATA_WIDGET_CONFIG}
+          height={600}
+          className="xl:col-span-2"
+        />
       </section>
-    </div>
+    </PageShell>
   );
 }

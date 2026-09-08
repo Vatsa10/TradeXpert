@@ -1,9 +1,8 @@
-import { StarIcon } from "lucide-react";
-
 import { searchStocks } from "@/lib/actions/finnhub.actions";
 import SearchCommand from "@/components/SearchCommand";
 import { WatchlistTable } from "@/components/WatchlistTable";
 import { getWatchlistWithData } from "@/lib/actions/getWatchlistWithData.actions";
+import { PageShell } from "@/components/system";
 
 // Session-scoped page (reads auth headers) — never statically renderable.
 export const dynamic = "force-dynamic";
@@ -12,39 +11,23 @@ export default async function WatchlistPage() {
   const watchlist = await getWatchlistWithData();
   const initialStocks = await searchStocks();
 
-  // empty watchlist
-  if (watchlist.length === 0) {
-    return (
-      <div className="watchlist-empty-wrapper">
-        <div className="flex watchlist-empty-container">
-          <div className="watchlist-empty">
-            <StarIcon className="watchlist-star" />
-
-            <h2 className="empty-title">Your watchlist is empty</h2>
-
-            <p className="empty-description">
-              Start building your watchlist by searching for stocks and clicking
-              the star icon to add them.
-            </p>
-          </div>
-        </div>
-
-        <SearchCommand initialStocks={initialStocks} />
-      </div>
-    );
-  }
+  const count = watchlist.length;
 
   return (
-    <section className="watchlist">
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <h2 className="watchlist-title">Watchlist</h2>
-
-          <SearchCommand initialStocks={initialStocks} />
-        </div>
-
+    <PageShell
+      width="wide"
+      eyebrow="Tracking"
+      title="Watchlist"
+      description={
+        count > 0
+          ? `${count} ${count === 1 ? "stock" : "stocks"} — last price, day change and valuation at a glance.`
+          : "Stocks you follow, with last price, day change and valuation at a glance."
+      }
+      actions={<SearchCommand initialStocks={initialStocks} />}
+    >
+      <div className="app-enter">
         <WatchlistTable watchlist={watchlist} />
       </div>
-    </section>
+    </PageShell>
   );
 }

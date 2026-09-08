@@ -49,53 +49,53 @@ const UserDropdown = ({
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="flex items-center gap-3 text-gray-400 hover:text-yellow-500"
+          className="app-press app-focus flex items-center gap-3 text-ink-secondary hover:text-brand"
         >
-          <Avatar className="size-8 border border-zinc-800">
+          <Avatar className="size-8 border border-hairline">
             <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback className="bg-yellow-500 text-yellow-900 text-sm font-bold">
+            <AvatarFallback className="bg-brand text-brand-ink text-sm font-bold">
               {user.name?.[0] || <UserIcon size={14} />}
             </AvatarFallback>
           </Avatar>
 
           <div className="hidden md:flex flex-col items-start">
-            <span className="text-base font-medium text-gray-400">
+            <span className="text-base font-medium text-ink">
               {user.name}
             </span>
           </div>
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent className="text-gray-400 bg-zinc-900 border-zinc-800">
+      <DropdownMenuContent className="text-ink-secondary bg-surface-overlay border-hairline">
         <DropdownMenuLabel>
           <div className="relative flex items-center gap-3 py-2">
-            <Avatar className="size-10 border border-zinc-800">
+            <Avatar className="size-10 border border-hairline">
               <AvatarImage src="https://github.com/shadcn.png" />
-              <AvatarFallback className="bg-yellow-500 text-yellow-900 text-sm font-bold">
+              <AvatarFallback className="bg-brand text-brand-ink text-sm font-bold">
                 {user.name?.[0] || "U"}
               </AvatarFallback>
             </Avatar>
 
             <div className="flex flex-col">
-              <span className="text-base font-medium text-gray-400">
+              <span className="text-base font-medium text-ink">
                 {user.name}
               </span>
-              <span className="text-sm text-gray-500">{user.email}</span>
+              <span className="text-sm text-ink-faint">{user.email}</span>
             </div>
           </div>
         </DropdownMenuLabel>
 
-        <DropdownMenuSeparator className="bg-zinc-800" />
+        <DropdownMenuSeparator className="bg-hairline" />
 
         <DropdownMenuItem
           onClick={handleSignOut}
-          className="flex items-center gap-2 cursor-pointer focus:bg-red-500/10 focus:text-red-500"
+          className="flex items-center gap-2 cursor-pointer focus:bg-negative/10 focus:text-negative"
         >
           <LogOutIcon className="size-4" />
           <span>Logout</span>
         </DropdownMenuItem>
 
-        <DropdownMenuSeparator className="hidden sm:block bg-zinc-800" />
+        <DropdownMenuSeparator className="hidden sm:block bg-hairline" />
 
         <div className="sm:hidden">
           <NavItems initialStocks={initialStocks} user={user} />

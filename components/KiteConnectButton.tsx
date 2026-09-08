@@ -52,7 +52,7 @@ export default function KiteConnectButton({ className }: { className?: string })
           window.location.href = "/api/kite/login";
         }}
         className={cn(
-          "flex cursor-pointer items-center gap-2 rounded-lg border border-yellow-600/60 bg-yellow-500/10 px-3 py-2 text-sm font-medium text-yellow-500 transition-colors hover:bg-yellow-500/20",
+          "app-press app-focus flex cursor-pointer items-center gap-2 rounded-md border border-brand/40 bg-brand/10 px-3 py-2 text-sm font-medium text-brand hover:bg-brand/20",
           className
         )}
       >
@@ -65,18 +65,18 @@ export default function KiteConnectButton({ className }: { className?: string })
   return (
     <div
       className={cn(
-        "flex flex-col gap-0.5 rounded-lg border border-emerald-800/60 bg-emerald-500/10 px-3 py-2 text-sm",
+        "flex flex-col gap-0.5 rounded-md border border-positive/30 bg-positive/10 px-3 py-2 text-sm",
         className
       )}
     >
-      <span className="flex items-center gap-2 font-medium text-emerald-400">
-        <span className="size-2 rounded-full bg-emerald-400" />
+      <span className="flex items-center gap-2 font-medium text-positive">
+        <span className="size-2 rounded-full bg-positive" />
         Kite connected
         {status.kiteUserId ? (
-          <span className="text-gray-400">({status.kiteUserId})</span>
+          <span className="text-ink-secondary">({status.kiteUserId})</span>
         ) : null}
       </span>
-      <span className="text-xs text-gray-500">
+      <span className="text-xs text-ink-faint">
         Session expires daily — reconnect each trading morning.
       </span>
     </div>

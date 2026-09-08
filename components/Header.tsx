@@ -22,7 +22,7 @@ export async function Header({ user }: { user: User | null }) {
           />
         </Link>
 
-        <nav className="hidden sm:block">
+        <nav aria-label="Primary">
           <NavItems initialStocks={initialStocks} user={user} />
         </nav>
 
